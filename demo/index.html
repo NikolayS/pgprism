@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pgscope — PostgreSQL EXPLAIN plan visualizer (PG 15–19)</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #fafafa;
+    --ink: #111827;
+    --ink-soft: #374151;
+    --ink-faint: #6b7280;
+    --line: #e5e7eb;
+    --line-strong: #d1d5db;
+    --accent: #ea580c;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  }
+  [data-theme="dark"] {
+    --bg: #0c0f14;
+    --surface: #131720;
+    --ink: #f3f4f6;
+    --ink-soft: #cbd5e1;
+    --ink-faint: #8b95a7;
+    --line: #232a38;
+    --line-strong: #343d50;
+    --accent: #ff7a33;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 20px 56px;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 20px;
+  }
+  h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .lead {
+    margin: 0;
+    color: var(--ink-soft);
+    max-width: 68ch;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .btn {
+    appearance: none;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    color: var(--ink-soft);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 5px 11px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .btn.active {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink);
+  }
+  .paste-box {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+    margin-bottom: 18px;
+  }
+  .paste-box summary {
+    cursor: pointer;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    user-select: none;
+  }
+  .paste-body {
+    padding: 0 12px 12px;
+    border-top: 1px solid var(--line);
+  }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    margin-top: 10px;
+    padding: 9px 10px;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+  }
+  .err {
+    color: #f87171;
+    font-family: var(--mono);
+    font-size: 12px;
+    margin-top: 6px;
+  }
+  .hint {
+    color: var(--ink-faint);
+    font-size: 12px;
+    margin-top: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>pgscope</h1>
+      <p class="lead">
+        Zero-dependency PostgreSQL EXPLAIN visualizer and JSON-to-text translator for PG 15–19. Accepts JSON or text plans, converts buffers in 8 KiB blocks to IEC binary units, and links diagnostics straight to plan nodes.
+      </p>
+    </div>
+    <button type="button" class="btn" id="pageThemeBtn">Light mode</button>
+  </header>
+
+  <div class="row" id="sampleRow"></div>
+
+  <details class="paste-box" id="pasteDetails">
+    <summary>Paste your own EXPLAIN (JSON or text)</summary>
+    <div class="paste-body">
+      <textarea id="planInput" placeholder="Paste PostgreSQL EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) or EXPLAIN text here..."></textarea>
+      <div class="row" style="margin-top:8px;margin-bottom:0">
+        <button type="button" class="btn active" id="applyPlanBtn">Visualize pasted plan</button>
+        <button type="button" class="btn" id="loadSampleBtn">Fill with current sample</button>
+      </div>
+      <div class="err" id="pasteErr"></div>
+    </div>
+  </details>
+
+  <pg-plan id="viewer"></pg-plan>
+
+  <p class="hint">
+    Tip: switch between Table, Tree, Flame, Text (translated via <code>jsonToText</code> when given JSON), and JSON. Click any row, tree node, flame bar, or diagnostic link to inspect exclusive vs inclusive timing, buffers, and PG 15–19 telemetry.
+  </p>
+</div>
+
+<script src="../dist/pgscope.iife.js"></script>
+<script>
+(function () {
+  const SAMPLES = [
+    {
+      id: 'pg17-wave1a',
+      label: 'PG 17 · Wave 1a fuzzy search (text)',
+      plan: `Bitmap Heap Scan on entity_search.entity_names_g00000000 n  (cost=52976.25..37637165.77 rows=6613063 width=12) (actual time=32.203..131.876 rows=187 loops=1)
+  Output: n.id, n.country, n.is_alias
+  Recheck Cond: (entity_search.typo_pair_keys(n.normalized_name, n.full_form_names) && '{-2129295693,-2124144046}'::integer[])
+  Filter: ((n.generation_id = '00000000-0000-4000-8000-000000000001'::uuid) AND (EXISTS(SubPlan 2) OR EXISTS(SubPlan 3)))
+  Rows Removed by Filter: 15648
+  Heap Blocks: exact=15669
+  Buffers: shared hit=16636
+  CTE forms
+    ->  Append  (cost=0.00..0.10 rows=2 width=72) (actual time=0.015..0.022 rows=3 loops=1)
+          ->  Function Scan on pg_catalog.unnest f  (cost=0.00..0.04 rows=1 width=72) (actual time=0.014..0.014 rows=1 loops=1)
+                Output: f.form, 'short'::text
+                Function Call: unnest('{fdtuse}'::text[])
+                Filter: ((char_length(f.form) >= 3) AND (char_length(f.form) <= 255))
+          ->  Function Scan on pg_catalog.unnest f_1  (cost=0.00..0.06 rows=1 width=72) (actual time=0.004..0.005 rows=2 loops=1)
+                Output: f_1.form, 'full'::text
+                Function Call: unnest('{"fdtuse inc","fdtuse incorporated"}'::text[])
+                Filter: ((char_length(f_1.form) >= 3) AND (char_length(f_1.form) <= 255))
+  ->  Bitmap Index Scan on entity_names_g00000000_typo_pairs_idx  (cost=0.00..51322.88 rows=8817417 width=0) (actual time=28.621..28.622 rows=15835 loops=1)
+        Index Cond: (entity_search.typo_pair_keys(n.normalized_name, n.full_form_names) && '{-2129295693,-2124144046}'::integer[])
+        Buffers: shared hit=967
+  SubPlan 2
+    ->  CTE Scan on forms t  (cost=0.00..0.11 rows=1 width=0) (actual time=0.001..0.001 rows=0 loops=15835)
+          Filter: ((t.edits > 0) AND (t.kind = 'short'::text))
+          Rows Removed by Filter: 3
+  SubPlan 3
+    ->  Hash Join  (cost=0.07..0.26 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=15648)
+          Hash Cond: ("left"(ff.form, 1) = "left"(t_1.form, 1))
+          Rows Removed by Join Filter: 4
+          ->  Function Scan on pg_catalog.unnest ff  (cost=0.00..0.10 rows=10 width=32) (actual time=0.001..0.001 rows=2 loops=15648)
+                Output: ff.form
+                Function Call: unnest(n.full_form_names)
+          ->  Hash  (cost=0.05..0.05 rows=1 width=40) (actual time=0.007..0.007 rows=2 loops=1)
+                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                ->  CTE Scan on forms t_1  (cost=0.00..0.05 rows=1 width=40) (actual time=0.002..0.003 rows=2 loops=1)
+                      Filter: ((t_1.edits > 0) AND (t_1.kind = 'full'::text))
+                      Rows Removed by Filter: 1
+Settings: jit = 'off', effective_cache_size = '48GB', work_mem = '32MB'
+Query Identifier: 2270953677838325333
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.355 ms
+Execution Time: 131.964 ms`
+    },
+    {
+      id: 'pg18-features',
+      label: 'PG 18 · Fractional rows, Disabled, Index Searches, WAL (JSON)',
+      plan: JSON.stringify([{
+        "Plan": {
+          "Node Type": "WindowAgg",
+          "Parallel Aware": false,
+          "Startup Cost": 120.40,
+          "Total Cost": 4890.15,
+          "Plan Rows": 1200,
+          "Plan Width": 40,
+          "Actual Startup Time": 8.210,
+          "Actual Total Time": 41.800,
+          "Actual Rows": 1200.00,
+          "Actual Loops": 1,
+          "Output": ["o.customer_id", "o.total", "row_number() OVER w1"],
+          "Window": "w1 AS (PARTITION BY o.customer_id ORDER BY o.created_at DESC)",
+          "Run Condition": "(row_number() OVER w1 <= 5)",
+          "Storage": "Memory",
+          "Maximum Storage": 264,
+          "Shared Hit Blocks": 912,
+          "Shared Read Blocks": 184,
+          "Shared I/O Read Time": 14.320,
+          "WAL Records": 18,
+          "WAL FPI": 2,
+          "WAL Bytes": 6420,
+          "WAL Buffers Full": 1,
+          "Plans": [
+            {
+              "Node Type": "Nested Loop",
+              "Parent Relationship": "Outer",
+              "Join Type": "Inner",
+              "Parallel Aware": false,
+              "Startup Cost": 0.43,
+              "Total Cost": 4420.10,
+              "Plan Rows": 1200,
+              "Plan Width": 32,
+              "Actual Startup Time": 0.310,
+              "Actual Total Time": 36.200,
+              "Actual Rows": 1200.00,
+              "Actual Loops": 1,
+              "Shared Hit Blocks": 912,
+              "Shared Read Blocks": 184,
+              "Shared I/O Read Time": 14.320,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Relation Name": "customers",
+                  "Schema": "public",
+                  "Alias": "c",
+                  "Startup Cost": 0.00,
+                  "Total Cost": 410.00,
+                  "Plan Rows": 400,
+                  "Plan Width": 8,
+                  "Actual Startup Time": 0.025,
+                  "Actual Total Time": 8.400,
+                  "Actual Rows": 1600.00,
+                  "Actual Loops": 1,
+                  "Disabled": true,
+                  "Filter": "(c.tier = 'enterprise'::text)",
+                  "Rows Removed by Filter": 8400,
+                  "Shared Hit Blocks": 110,
+                  "Shared Read Blocks": 140,
+                  "Shared I/O Read Time": 11.100
+                },
+                {
+                  "Node Type": "Index Only Scan",
+                  "Parent Relationship": "Inner",
+                  "Parallel Aware": false,
+                  "Scan Direction": "Forward",
+                  "Index Name": "orders_cust_created_idx",
+                  "Relation Name": "orders",
+                  "Schema": "public",
+                  "Alias": "o",
+                  "Startup Cost": 0.43,
+                  "Total Cost": 1.85,
+                  "Plan Rows": 3,
+                  "Plan Width": 24,
+                  "Actual Startup Time": 0.011,
+                  "Actual Total Time": 0.015,
+                  "Actual Rows": 0.75,
+                  "Actual Loops": 1600,
+                  "Index Cond": "(o.customer_id = c.id)",
+                  "Heap Fetches": 340,
+                  "Index Searches": 1600,
+                  "Shared Hit Blocks": 802,
+                  "Shared Read Blocks": 44,
+                  "Shared I/O Read Time": 3.220
+                }
+              ]
+            }
+          ]
+        },
+        "Planning": { "Shared Hit Blocks": 42, "Memory Used": 96, "Memory Allocated": 128 },
+        "Planning Time": 0.612,
+        "Serialization": { "Time": 0.840, "Output Volume": 88, "Format": "text" },
+        "Settings": { "enable_indexscan": "off", "track_io_timing": "on" },
+        "Execution Time": 43.110
+      }], null, 2)
+    },
+    {
+      id: 'pg19-io-memoize',
+      label: 'PG 19 · EXPLAIN (IO), Memoize estimates, Replaces, ON CONFLICT (JSON)',
+      plan: JSON.stringify([{
+        "Plan": {
+          "Node Type": "ModifyTable",
+          "Operation": "Insert",
+          "Relation Name": "rollup_cache",
+          "Schema": "analytics",
+          "Alias": "rc",
+          "Startup Cost": 0.42,
+          "Total Cost": 1820.50,
+          "Plan Rows": 0,
+          "Plan Width": 0,
+          "Actual Startup Time": 1.200,
+          "Actual Total Time": 54.600,
+          "Actual Rows": 0.00,
+          "Actual Loops": 1,
+          "Conflict Resolution": "SELECT FOR UPDATE",
+          "Conflict Arbiter Indexes": ["rollup_cache_pkey"],
+          "Tuples Inserted": 4120,
+          "Conflicting Tuples": 880,
+          "Shared Hit Blocks": 12400,
+          "Shared Read Blocks": 640,
+          "Shared Dirtied Blocks": 920,
+          "WAL Records": 5210,
+          "WAL FPI": 14,
+          "WAL Bytes": 481200,
+          "WAL FPI Bytes": 112640,
+          "WAL Buffers Full": 3,
+          "Plans": [
+            {
+              "Node Type": "Nested Loop",
+              "Parent Relationship": "Outer",
+              "Join Type": "Inner",
+              "Parallel Aware": false,
+              "Startup Cost": 0.42,
+              "Total Cost": 1420.50,
+              "Plan Rows": 5000,
+              "Plan Width": 24,
+              "Actual Startup Time": 0.800,
+              "Actual Total Time": 28.400,
+              "Actual Rows": 5000.00,
+              "Actual Loops": 1,
+              "Shared Hit Blocks": 4200,
+              "Shared Read Blocks": 640,
+              "Plans": [
+                {
+                  "Node Type": "Bitmap Heap Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Relation Name": "events",
+                  "Schema": "public",
+                  "Alias": "e",
+                  "Startup Cost": 45.00,
+                  "Total Cost": 820.00,
+                  "Plan Rows": 5000,
+                  "Plan Width": 16,
+                  "Actual Startup Time": 0.750,
+                  "Actual Total Time": 18.900,
+                  "Actual Rows": 5000.00,
+                  "Actual Loops": 1,
+                  "Recheck Cond": "(e.bucket = 42)",
+                  "Exact Heap Blocks": 410,
+                  "Lossy Heap Blocks": 190,
+                  "Rows Removed by Index Recheck": 1420,
+                  "Average Prefetch Distance": 12.40,
+                  "Max Prefetch Distance": 32,
+                  "Prefetch Capacity": 64,
+                  "I/O Count": 96,
+                  "I/O Waits": 14,
+                  "Average I/O Size": 6.67,
+                  "Average I/Os In Progress": 4.20,
+                  "Shared Hit Blocks": 3600,
+                  "Shared Read Blocks": 640,
+                  "Shared I/O Read Time": 9.850,
+                  "Plans": [
+                    {
+                      "Node Type": "Bitmap Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Index Name": "events_bucket_idx",
+                      "Startup Cost": 0.00,
+                      "Total Cost": 43.75,
+                      "Plan Rows": 5000,
+                      "Plan Width": 0,
+                      "Actual Startup Time": 0.410,
+                      "Actual Total Time": 0.410,
+                      "Actual Rows": 5000.00,
+                      "Actual Loops": 1,
+                      "Index Searches": 1,
+                      "Shared Hit Blocks": 38,
+                      "Shared Read Blocks": 0
+                    }
+                  ]
+                },
+                {
+                  "Node Type": "Memoize",
+                  "Parent Relationship": "Inner",
+                  "Parallel Aware": false,
+                  "Startup Cost": 0.14,
+                  "Total Cost": 0.18,
+                  "Plan Rows": 1,
+                  "Plan Width": 8,
+                  "Actual Startup Time": 0.001,
+                  "Actual Total Time": 0.001,
+                  "Actual Rows": 1.00,
+                  "Actual Loops": 5000,
+                  "Cache Key": "e.org_id",
+                  "Cache Mode": "logical",
+                  "Estimated Capacity": 256,
+                  "Estimated Distinct Lookup Keys": 180,
+                  "Estimated Lookups": 5000,
+                  "Estimated Hit Percent": 96.40,
+                  "Cache Hits": 3100,
+                  "Cache Misses": 1900,
+                  "Cache Evictions": 620,
+                  "Cache Overflows": 12,
+                  "Peak Memory Usage": 16,
+                  "Shared Hit Blocks": 562,
+                  "Plans": [
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "orgs_pkey",
+                      "Relation Name": "orgs",
+                      "Schema": "public",
+                      "Alias": "o",
+                      "Startup Cost": 0.14,
+                      "Total Cost": 0.16,
+                      "Plan Rows": 1,
+                      "Plan Width": 8,
+                      "Actual Startup Time": 0.002,
+                      "Actual Total Time": 0.002,
+                      "Actual Rows": 1.00,
+                      "Actual Loops": 1900,
+                      "Index Cond": "(o.id = e.org_id)",
+                      "Index Searches": 1900,
+                      "Shared Hit Blocks": 562
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "Planning Time": 0.480,
+        "Execution Time": 55.200
+      }], null, 2)
+    },
+    {
+      id: 'pg16-parallel-spill',
+      label: 'PG 16 · Parallel Gather + HashAgg Disk Spill (JSON)',
+      plan: JSON.stringify([{
+        "Plan": {
+          "Node Type": "Sort",
+          "Parallel Aware": false,
+          "Startup Cost": 18420.11,
+          "Total Cost": 18545.50,
+          "Plan Rows": 50157,
+          "Plan Width": 24,
+          "Actual Startup Time": 62.100,
+          "Actual Total Time": 74.800,
+          "Actual Rows": 50000,
+          "Actual Loops": 1,
+          "Sort Key": ["total_val DESC"],
+          "Sort Method": "external merge",
+          "Sort Space Used": 2496,
+          "Sort Space Type": "Disk",
+          "Shared Hit Blocks": 1450,
+          "Temp Read Blocks": 910,
+          "Temp Written Blocks": 1120,
+          "Plans": [
+            {
+              "Node Type": "Aggregate",
+              "Strategy": "Hashed",
+              "Partial Mode": "Simple",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Startup Cost": 9959.55,
+              "Total Cost": 12450.20,
+              "Plan Rows": 50157,
+              "Plan Width": 24,
+              "Actual Startup Time": 34.400,
+              "Actual Total Time": 48.200,
+              "Actual Rows": 50000,
+              "Actual Loops": 1,
+              "Group Key": ["i.descr"],
+              "Planned Partitions": 4,
+              "HashAgg Batches": 85,
+              "Peak Memory Usage": 137,
+              "Disk Usage": 1880,
+              "Shared Hit Blocks": 1450,
+              "Temp Read Blocks": 530,
+              "Temp Written Blocks": 707,
+              "Plans": [
+                {
+                  "Node Type": "Gather",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Workers Planned": 4,
+                  "Workers Launched": 2,
+                  "Single Copy": false,
+                  "Startup Cost": 1000.00,
+                  "Total Cost": 8200.00,
+                  "Plan Rows": 500000,
+                  "Plan Width": 18,
+                  "Actual Startup Time": 0.450,
+                  "Actual Total Time": 22.100,
+                  "Actual Rows": 500000,
+                  "Actual Loops": 1,
+                  "Shared Hit Blocks": 1450,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": true,
+                      "Relation Name": "line_items",
+                      "Schema": "public",
+                      "Alias": "i",
+                      "Startup Cost": 0.00,
+                      "Total Cost": 4200.00,
+                      "Plan Rows": 166667,
+                      "Plan Width": 18,
+                      "Actual Startup Time": 0.015,
+                      "Actual Total Time": 12.400,
+                      "Actual Rows": 166667,
+                      "Actual Loops": 3,
+                      "Shared Hit Blocks": 1450
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "Planning Time": 0.310,
+        "Settings": { "work_mem": "64kB", "max_parallel_workers_per_gather": "4" },
+        "Execution Time": 75.400
+      }], null, 2)
+    },
+    {
+      id: 'pg15-jit-triggers',
+      label: 'PG 15 · Legacy I/O Timings, JIT Overhead & Triggers (JSON)',
+      plan: JSON.stringify([{
+        "Plan": {
+          "Node Type": "ModifyTable",
+          "Operation": "Update",
+          "Relation Name": "invoices",
+          "Schema": "billing",
+          "Alias": "inv",
+          "Startup Cost": 0.29,
+          "Total Cost": 240.10,
+          "Plan Rows": 0,
+          "Plan Width": 0,
+          "Actual Startup Time": 0.350,
+          "Actual Total Time": 14.200,
+          "Actual Rows": 0,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 1420,
+          "Shared Read Blocks": 48,
+          "Shared Dirtied Blocks": 210,
+          "I/O Read Time": 6.450,
+          "I/O Write Time": 0.920,
+          "Plans": [
+            {
+              "Node Type": "Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Scan Direction": "Forward",
+              "Index Name": "invoices_status_idx",
+              "Relation Name": "invoices",
+              "Schema": "billing",
+              "Alias": "inv",
+              "Startup Cost": 0.29,
+              "Total Cost": 240.10,
+              "Plan Rows": 420,
+              "Plan Width": 14,
+              "Actual Startup Time": 0.140,
+              "Actual Total Time": 6.800,
+              "Actual Rows": 415,
+              "Actual Loops": 1,
+              "Index Cond": "(inv.status = 'pending'::text)",
+              "Shared Hit Blocks": 240,
+              "Shared Read Blocks": 48,
+              "I/O Read Time": 6.450
+            }
+          ]
+        },
+        "Planning Time": 0.290,
+        "Triggers": [
+          { "Trigger Name": "invoices_audit_trg", "Relation": "invoices", "Time": 3.840, "Calls": 415 },
+          { "Trigger Name": "RI_ConstraintTrigger_c_901", "Constraint Name": "invoices_account_fkey", "Relation": "invoices", "Time": 2.110, "Calls": 415 }
+        ],
+        "JIT": {
+          "Functions": 9,
+          "Options": { "Inlining": false, "Optimization": false, "Expressions": true, "Deforming": true },
+          "Timing": { "Generation": 1.210, "Inlining": 0.0, "Optimization": 0.0, "Emission": 8.420, "Total": 9.630 }
+        },
+        "Execution Time": 29.850
+      }], null, 2)
+    }
+  ];
+
+  const viewer = document.getElementById('viewer');
+  const sampleRow = document.getElementById('sampleRow');
+  const inputEl = document.getElementById('planInput');
+  const errEl = document.getElementById('pasteErr');
+  const themeBtn = document.getElementById('pageThemeBtn');
+
+  let activeId = SAMPLES[0].id;
+
+  function loadSample(sample) {
+    activeId = sample.id;
+    errEl.textContent = '';
+    viewer.setAttribute('plan', sample.plan);
+    Array.from(sampleRow.children).forEach((b) => {
+      b.classList.toggle('active', b.dataset.sampleId === sample.id);
+    });
+  }
+
+  SAMPLES.forEach((s) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.textContent = s.label;
+    btn.dataset.sampleId = s.id;
+    btn.addEventListener('click', () => loadSample(s));
+    sampleRow.appendChild(btn);
+  });
+
+  document.getElementById('applyPlanBtn').addEventListener('click', () => {
+    errEl.textContent = '';
+    try {
+      const txt = inputEl.value.trim();
+      if (!txt) throw new Error('Paste an EXPLAIN JSON or text plan first.');
+      pgscope.parsePlan(txt);
+      viewer.setAttribute('plan', txt);
+      Array.from(sampleRow.children).forEach((b) => b.classList.remove('active'));
+    } catch (e) {
+      errEl.textContent = e instanceof Error ? e.message : String(e);
+    }
+  });
+
+  document.getElementById('loadSampleBtn').addEventListener('click', () => {
+    const cur = SAMPLES.find((s) => s.id === activeId) || SAMPLES[0];
+    inputEl.value = cur.plan;
+  });
+
+  themeBtn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    themeBtn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+  });
+
+  loadSample(SAMPLES[0]);
+})();
+</script>
+</body>
+</html>

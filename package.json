@@ -1,0 +1,47 @@
+{
+  "name": "pgscope",
+  "version": "0.1.0",
+  "description": "Tiny, zero-dependency TypeScript visualizer and JSON-to-text translator for PostgreSQL EXPLAIN plans (PG 15-19)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/pgscope.cjs",
+  "module": "./dist/pgscope.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/pgscope.js",
+      "require": "./dist/pgscope.cjs"
+    },
+    "./styles.css": "./dist/pgscope.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "check": "npm run typecheck && npm run build && npm test"
+  },
+  "keywords": [
+    "postgres",
+    "postgresql",
+    "explain",
+    "explain-analyze",
+    "query-plan",
+    "visualizer",
+    "web-component"
+  ],
+  "author": "Nikolay Samokhvalov",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NikolayS/pgscope.git"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
+  }
+}

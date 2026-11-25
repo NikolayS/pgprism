@@ -1,0 +1,105 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { diagnosePlan } from '../src/diagnostics';
+import { parsePlan } from '../src/parser';
+import { blocksToBytes, formatBlocks, formatBytes, formatFactor } from '../src/units';
+
+const WAVE1A_SUMMARY = '/Users/nik/tmp/forge-tradeverifyd-w0/cases/tradeverifyd-search-pg17-01/runs/wave1a_61m/wave1a_summary.json';
+
+test('IEC binary units and 8 KiB block formatting', () => {
+  assert.equal(blocksToBytes(1), 8192);
+  assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBlocks(1), '8 KiB');
+  assert.equal(formatBlocks(128), '1 MiB');
+  assert.equal(formatBlocks(16636), '130 MiB');
+  assert.equal(formatBlocks(131072), '1 GiB');
+  assert.equal(formatFactor(35363.97), '35,364×');
+  assert.equal(formatFactor(3.25), '3.3×');
+});
+
+test('Diagnostics engine flags spills, lossy bitmaps, disabled nodes, misestimates, and Wave 1a hotspots', () => {
+  const summary = JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8'));
+  const p = parsePlan(summary.explains.exact.stage3a_v6_2k_explain);
+  const diags = diagnosePlan(p);
+  assert.ok(diags.some((d) => d.code === 'row-misestimate' && d.severity === 'high'));
+  assert.ok(diags.some((d) => d.code === 'filter-discard' && d.severity === 'high'));
+
+  // Synthetic test with disk spill, lossy bitmap, disabled node, worker shortfall, heap fetches, JIT
+  const tricky = [
+    {
+      Plan: {
+        'Node Type': 'Gather',
+        'Parallel Aware': false,
+        'Workers Planned': 4,
+        'Workers Launched': 1,
+        'Startup Cost': 0,
+        'Total Cost': 1000,
+        'Plan Rows': 100,
+        'Plan Width': 8,
+        'Actual Startup Time': 1,
+        'Actual Total Time': 100,
+        'Actual Rows': 100,
+        'Actual Loops': 1,
+        'Temp Read Blocks': 500,
+        'Temp Written Blocks': 500,
+        Plans: [
+          {
+            'Node Type': 'Bitmap Heap Scan',
+            'Parent Relationship': 'Outer',
+            'Parallel Aware': true,
+            'Relation Name': 'events',
+            Alias: 'events',
+            'Startup Cost': 0,
+            'Total Cost': 500,
+            'Plan Rows': 10,
+            'Plan Width': 8,
+            'Actual Startup Time': 1,
+            'Actual Total Time': 50,
+            'Actual Rows': 1000,
+            'Actual Loops': 2,
+            'Exact Heap Blocks': 10,
+            'Lossy Heap Blocks': 400,
+            Disabled: true,
+            'Shared Read Blocks': 2000,
+            'Shared I/O Read Time': 60,
+          },
+          {
+            'Node Type': 'Index Only Scan',
+            'Parent Relationship': 'Inner',
+            'Parallel Aware': false,
+            'Index Name': 'events_pkey',
+            'Relation Name': 'events',
+            Alias: 'e2',
+            'Startup Cost': 0,
+            'Total Cost': 10,
+            'Plan Rows': 5,
+            'Plan Width': 8,
+            'Actual Startup Time': 0.1,
+            'Actual Total Time': 2,
+            'Actual Rows': 100,
+            'Actual Loops': 1,
+            'Heap Fetches': 100,
+          },
+        ],
+      },
+      JIT: {
+        Functions: 12,
+        Options: { Inlining: true, Optimization: true, Expressions: true, Deforming: true },
+        Timing: { Generation: 2, Inlining: 10, Optimization: 25, Emission: 8, Total: 45 },
+      },
+      'Execution Time': 105,
+    },
+  ];
+  const p2 = parsePlan(tricky);
+  const d2 = diagnosePlan(p2);
+  const codes = new Set(d2.map((d) => d.code));
+  assert.ok(codes.has('disabled-node'));
+  assert.ok(codes.has('disk-spill'));
+  assert.ok(codes.has('lossy-bitmap'));
+  assert.ok(codes.has('worker-shortfall'));
+  assert.ok(codes.has('shared-reads'));
+  assert.ok(codes.has('heap-fetches'));
+  assert.ok(codes.has('jit-overhead'));
+  assert.ok(codes.has('row-misestimate'));
+});

@@ -1,0 +1,17 @@
+import type { BufferGroup, BufferStats, TempBufferGroup } from './types';
+export declare const PG_BLOCK_SIZE = 8192;
+export declare function emptyBufferGroup(): BufferGroup;
+export declare function emptyTempGroup(): TempBufferGroup;
+export declare function emptyBufferStats(): BufferStats;
+export declare function sumBufferBlocks(b: BufferStats): number;
+export declare function formatBytes(bytes: number): string;
+export declare function blocksToBytes(blocks: number): number;
+export declare function formatBlocks(blocks: number): string;
+export declare function formatKbAsIec(kb: number): string;
+export declare function formatMs(ms: number | undefined): string;
+export declare function formatCount(n: number | undefined): string;
+export declare function formatCompactCount(n: number): string;
+export declare function formatFactor(factor: number): string;
+export declare function formatActualRowsText(rows: number): string;
+export declare function quoteIdentifier(ident: string): string;
+export declare function formatScanTarget(schema: string | undefined, name: string | undefined, alias: string | undefined, quoteAll?: boolean): string;
