@@ -1,14 +1,14 @@
-<img src="docs/logo.svg" width="52" height="52" alt="pgprism logo" align="left" />
+<img src="docs/logo.svg" width="52" height="52" alt="pgPrism logo" align="left" />
 
-# pgprism
+# pgPrism
 
 Tiny, zero-dependency TypeScript library and `<pg-plan>` Web Component for Postgres `explain` plans (Postgres 15 through 19).
 
 Try the live demo at **[https://pgprism.dev/](https://pgprism.dev/)** (also served via [nikolays.github.io/pgprism](https://nikolays.github.io/pgprism/)).
 
-`pgprism` parses both `explain (format json)` and text `explain` plans, treats `BUFFERS` as a primary metric in 8 KiB IEC binary units (`KiB`, `MiB`, `GiB`), translates JSON plans back to Postgres text via `jsonToText`, exports Markdown diagnostics via `formatForLLM`, and links findings directly to plan nodes.
+`pgPrism` parses both `explain (format json)` and text `explain` plans, treats `BUFFERS` as a primary metric in 8 KiB IEC binary units (`KiB`, `MiB`, `GiB`), translates JSON plans back to Postgres text via `jsonToText`, exports Markdown diagnostics via `formatForLLM`, and links findings directly to plan nodes.
 
-![pgprism Table view in dark mode](docs/screenshots/table-dark.png)
+![pgPrism Table view in dark mode](docs/screenshots/table-dark.png)
 
 ## Four integration modes
 
@@ -107,7 +107,7 @@ console.log(jsonToText(jsonPlan));
 
 ## Markdown briefs for coding agents (`formatForLLM`)
 
-Every `<pg-plan>` toolbar includes **Copy for LLM**, and the Node Inspector includes **Copy node**. Both run `formatForLLM` to produce compact Markdown with headline stats, CPU\* / I/O split, severity-ranked diagnostics, top relations by exclusive time and buffers, predicates, and the text plan:
+Every `<pg-plan>` toolbar includes **Copy for LLM**, and the Node Inspector includes **Copy node**. Both run `formatForLLM` to produce compact Markdown with headline stats, CPU\* / I/O split, severity-ranked diagnostics, top relations by exclusive time and buffers, predicates, and the text plan for Claude Code / Antigravity / Codex / etc.:
 
 ```ts
 import { formatForLLM } from 'pgprism';
@@ -128,11 +128,11 @@ You can switch metrics dynamically (`buffers`, `diskReads`, `exclusiveTime`, `in
 
 | Tree view (dark) | Flame view on Buffers |
 | --- | --- |
-| ![pgprism Tree view](docs/screenshots/tree-dark.png) | ![pgprism Flame Buffers view](docs/screenshots/flame-buffers-dark.png) |
+| ![pgPrism Tree view](docs/screenshots/tree-dark.png) | ![pgPrism Flame Buffers view](docs/screenshots/flame-buffers-dark.png) |
 
 | Breakdown and Node Inspector | Light mode with Diagnostics |
 | --- | --- |
-| ![pgprism Breakdown and Inspector](docs/screenshots/breakdown-inspector-dark.png) | ![pgprism Light mode](docs/screenshots/table-light.png) |
+| ![pgPrism Breakdown and Inspector](docs/screenshots/breakdown-inspector-dark.png) | ![pgPrism Light mode](docs/screenshots/table-light.png) |
 
 - **Summary and Breakdown**: displays execution/planning time, buffer cache hit %, **CPU\* vs I/O time split** when `I/O Timings` are present, and collapsible **By relation / index** and **By node type** tables.
 - **Table view**: exclusive and inclusive metrics, `loops x avg` per-loop cost visibility, 0-based bars, heat shading, and automatic dimming/hiding for `(never executed)` branches.
@@ -161,6 +161,6 @@ To run the live `psql` regression suite against Postgres 15–18 (comparing both
 PGHOST=127.0.0.1 PGUSER=postgres PGPASSWORD=postgres npm run test:psql
 ```
 
-`pgprism` draws design and Postgres-engineering inspiration from [Dalibo PEV2](https://github.com/dalibo/pev2), [depesz](https://explain.depesz.com/), Datadog query plans, [pgMustard](https://www.pgmustard.com/), and [explain.tensor.ru](https://explain.tensor.ru/), along with JSON-to-text formatting patterns from [Joe (`pgexplain`)](https://gitlab.com/postgres-ai/joe).
+`pgPrism` draws design and Postgres-engineering inspiration from [Dalibo PEV2](https://github.com/dalibo/pev2), [depesz](https://explain.depesz.com/), Datadog query plans, [pgMustard](https://www.pgmustard.com/), and [explain.tensor.ru](https://explain.tensor.ru/), along with JSON-to-text formatting patterns from [Joe (`pgexplain`)](https://gitlab.com/postgres-ai/joe).
 
 MIT license.

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" role="img" aria-label="pgprism logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" role="img" aria-label="pgPrism logo">
   <!-- Incoming unsplit query beam -->
   <line x1="6" y1="34" x2="22" y2="34" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
   <!-- Internal refraction fan -->

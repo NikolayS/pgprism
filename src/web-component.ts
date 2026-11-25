@@ -76,7 +76,7 @@ export class PgPlanElement extends BaseElement {
     } catch (err) {
       const shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
       const msg = err instanceof Error ? err.message : String(err);
-      shadow.textContent = `pgprism error: ${msg}`;
+      shadow.textContent = `pgPrism error: ${msg}`;
     }
   }
 }
