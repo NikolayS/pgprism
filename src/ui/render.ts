@@ -17,7 +17,7 @@ import {
   formatMs,
   sumBufferBlocks,
 } from '../units';
-import { attachCopyAction, clearNode, h } from './dom';
+import { clearNode, h, makeCopyButton } from './dom';
 import { renderInspector } from './inspector';
 import { renderBreakdownPanel } from './view-breakdown';
 import { renderDiagnosticsStrip } from './view-diagnostics';
@@ -528,13 +528,12 @@ export function renderPlan(
         rightTools.appendChild(searchInput);
       }
 
-      const copyLlmBtn = h(
-        'button',
-        { type: 'button', className: 'pgp-btn', title: 'Copy Markdown summary for coding agents' },
-        'Copy for LLM'
+      if (view === 'table' || view === 'tree' || view === 'flame') {
+        rightTools.appendChild(h('span', { className: 'pgp-sep', 'aria-hidden': 'true' }));
+      }
+      rightTools.appendChild(
+        makeCopyButton('Copy for LLM', () => formatForLLM(parsed), 'Copy Markdown summary for coding agents')
       );
-      attachCopyAction(copyLlmBtn, () => formatForLLM(parsed), 'Copy for LLM');
-      rightTools.appendChild(copyLlmBtn);
 
       rootEl.appendChild(h('div', { className: 'pgp-toolbar' }, viewBtns, rightTools));
     }

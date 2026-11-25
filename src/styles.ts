@@ -255,6 +255,33 @@ export const PGPRISM_CSS = `
   font-size: 11px;
   padding: 2px 7px;
 }
+.pgp-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: rgba(255, 122, 51, 0.45);
+  background: rgba(255, 122, 51, 0.08);
+  color: var(--pgp-ink);
+}
+.pgp-btn-action:hover {
+  border-color: var(--pgp-accent);
+  background: rgba(255, 122, 51, 0.15);
+}
+.pgp-root[data-theme="light"] .pgp-btn-action {
+  border-color: rgba(234, 88, 12, 0.45);
+  background: rgba(234, 88, 12, 0.06);
+}
+.pgp-root[data-theme="light"] .pgp-btn-action:hover {
+  border-color: var(--pgp-accent);
+  background: rgba(234, 88, 12, 0.12);
+}
+.pgp-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--pgp-line-strong);
+  margin: 0 3px;
+}
 .pgp-toolbar {
   display: flex;
   flex-wrap: wrap;

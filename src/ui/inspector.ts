@@ -9,7 +9,7 @@ import {
   formatMs,
   sumBufferBlocks,
 } from '../units';
-import { attachCopyAction, h } from './dom';
+import { h, makeCopyButton } from './dom';
 
 function kvSection(title: string, rows: Array<[string, string | undefined | null]>): HTMLElement | null {
   const valid = rows.filter((r): r is [string, string] => r[1] !== undefined && r[1] !== null && r[1] !== '');
@@ -95,12 +95,12 @@ export function renderInspector(
 ): HTMLElement {
   const wrap = h('aside', { className: 'pgp-inspector', 'aria-label': 'Node inspector' });
 
-  const copyNodeBtn = h(
-    'button',
-    { type: 'button', className: 'pgp-btn pgp-btn-sm', title: 'Copy node Markdown summary for coding agents' },
-    'Copy node'
+  const copyNodeBtn = makeCopyButton(
+    'Copy node',
+    () => formatNodeForLLM(parsed, node, diagnostics),
+    'Copy node Markdown summary for coding agents',
+    true
   );
-  attachCopyAction(copyNodeBtn, () => formatNodeForLLM(parsed, node, diagnostics), 'Copy node');
   const closeBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm', title: 'Close inspector' }, 'Close');
   closeBtn.addEventListener('click', onClose);
 

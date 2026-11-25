@@ -1,6 +1,6 @@
 import { parsedToText } from '../json-to-text';
 import type { ParsedExplain } from '../types';
-import { attachCopyAction, h } from './dom';
+import { h, makeCopyButton } from './dom';
 
 function highlightTextLine(line: string): HTMLElement {
   const span = h('span');
@@ -83,8 +83,7 @@ export function renderCodeView(
           })()
         : JSON.stringify(parsed.rawJson ?? parsed.plan, null, 2);
 
-  const copyBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm' }, 'Copy');
-  attachCopyAction(copyBtn, () => content, 'Copy');
+  const copyBtn = makeCopyButton('Copy', () => content, 'Copy plan text', true);
 
   const infoText =
     mode === 'text'
@@ -104,6 +103,7 @@ export function renderCodeView(
     );
     vBtn.addEventListener('click', onToggleVerbose);
     rightControls.appendChild(vBtn);
+    rightControls.appendChild(h('span', { className: 'pgp-sep', 'aria-hidden': 'true' }));
   }
   rightControls.appendChild(copyBtn);
 
