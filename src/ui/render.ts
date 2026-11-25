@@ -73,13 +73,181 @@ function mountStyles(target: Document | ShadowRoot, nonce?: string): void {
   }
 }
 
-function resolveInitialTheme(container: HTMLElement, pref?: ThemeMode): 'dark' | 'light' {
+export function parseCssColor(color: string): { r: number; g: number; b: number; a: number } | null {
+  const s = color.trim().toLowerCase();
+  if (!s || s === 'transparent') return null;
+
+  const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(s);
+  if (hex) {
+    const h = hex[1]!;
+    if (h.length === 3 || h.length === 4) {
+      const r = parseInt(h[0]! + h[0]!, 16);
+      const g = parseInt(h[1]! + h[1]!, 16);
+      const b = parseInt(h[2]! + h[2]!, 16);
+      const a = h.length === 4 ? parseInt(h[3]! + h[3]!, 16) / 255 : 1;
+      return a <= 0.01 ? null : { r, g, b, a };
+    }
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+    return a <= 0.01 ? null : { r, g, b, a };
+  }
+
+  const fn = /^rgba?\(([^)]+)\)$/.exec(s);
+  if (!fn) return null;
+  const body = fn[1]!.trim();
+
+  const parseChan = (tok: string): number | null => {
+    if (tok.endsWith('%')) {
+      const n = Number.parseFloat(tok.slice(0, -1));
+      return Number.isFinite(n) ? (n / 100) * 255 : null;
+    }
+    const n = Number.parseFloat(tok);
+    return Number.isFinite(n) ? n : null;
+  };
+  const parseAlpha = (tok: string | undefined): number | null => {
+    if (tok === undefined) return 1;
+    if (tok.endsWith('%')) {
+      const n = Number.parseFloat(tok.slice(0, -1));
+      return Number.isFinite(n) ? Math.max(0, Math.min(1, n / 100)) : null;
+    }
+    const n = Number.parseFloat(tok);
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+  };
+
+  let rgbParts: string[];
+  let alphaPart: string | undefined;
+  if (body.includes(',')) {
+    const parts = body.split(',').map((p) => p.trim());
+    if (parts.length < 3 || parts.length > 4) return null;
+    rgbParts = parts.slice(0, 3);
+    alphaPart = parts[3];
+  } else {
+    const [rgbSide, slashAlpha] = body.split('/').map((p) => p.trim());
+    const parts = (rgbSide ?? '').split(/\s+/).filter(Boolean);
+    if (parts.length !== 3) return null;
+    rgbParts = parts;
+    alphaPart = slashAlpha;
+  }
+
+  const r = parseChan(rgbParts[0]!);
+  const g = parseChan(rgbParts[1]!);
+  const b = parseChan(rgbParts[2]!);
+  const a = parseAlpha(alphaPart);
+  if (r === null || g === null || b === null || a === null || a <= 0.01) return null;
+  return {
+    r: Math.max(0, Math.min(255, r)),
+    g: Math.max(0, Math.min(255, g)),
+    b: Math.max(0, Math.min(255, b)),
+    a,
+  };
+}
+
+export function relativeLuminance(r: number, g: number, b: number): number {
+  const lin = (c: number): number => {
+    const s = Math.max(0, Math.min(255, c)) / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+export function resolveThemeFromBackgroundLayers(layers: string[], prefersLight: boolean): 'dark' | 'light' {
+  const stack: Array<{ r: number; g: number; b: number; a: number }> = [];
+  let hitOpaque = false;
+  for (const bg of layers) {
+    const parsed = parseCssColor(bg);
+    if (!parsed) continue;
+    stack.push(parsed);
+    if (parsed.a >= 0.99) {
+      hitOpaque = true;
+      break;
+    }
+  }
+
+  if (stack.length === 0) {
+    return prefersLight ? 'light' : 'dark';
+  }
+
+  let r = prefersLight ? 255 : 11;
+  let g = prefersLight ? 255 : 14;
+  let b = prefersLight ? 255 : 20;
+  let start = stack.length - 1;
+  if (hitOpaque) {
+    const base = stack[start]!;
+    r = base.r;
+    g = base.g;
+    b = base.b;
+    start--;
+  }
+  for (let i = start; i >= 0; i--) {
+    const top = stack[i]!;
+    r = top.r * top.a + r * (1 - top.a);
+    g = top.g * top.a + g * (1 - top.a);
+    b = top.b * top.a + b * (1 - top.a);
+  }
+  return relativeLuminance(r, g, b) > 0.5 ? 'light' : 'dark';
+}
+
+function classThemeOf(el: Element | null | undefined): 'dark' | 'light' | null {
+  if (!el?.classList) return null;
+  if (el.classList.contains('dark')) return 'dark';
+  if (el.classList.contains('light')) return 'light';
+  return null;
+}
+
+export function resolveInitialTheme(container: HTMLElement, pref?: ThemeMode): 'dark' | 'light' {
   if (pref === 'dark' || pref === 'light') return pref;
-  const closest = container.closest?.('[data-theme]')?.getAttribute('data-theme');
-  if (closest === 'light' || closest === 'dark') return closest;
-  const docTheme = document.documentElement?.getAttribute('data-theme');
-  if (docTheme === 'light' || docTheme === 'dark') return docTheme;
-  return 'dark';
+
+  const closestTheme = container.closest?.('[data-theme]')?.getAttribute('data-theme');
+  if (closestTheme === 'light' || closestTheme === 'dark') return closestTheme;
+  if (typeof document !== 'undefined') {
+    const bodyTheme = document.body?.getAttribute('data-theme');
+    if (bodyTheme === 'light' || bodyTheme === 'dark') return bodyTheme;
+    const docTheme = document.documentElement?.getAttribute('data-theme');
+    if (docTheme === 'light' || docTheme === 'dark') return docTheme;
+  }
+
+  // Check explicit .dark / .light class on ancestors, body, or html
+  let cur: Element | null = container;
+  while (cur) {
+    const ct = classThemeOf(cur);
+    if (ct) return ct;
+    cur = cur.parentElement;
+  }
+  if (typeof document !== 'undefined') {
+    const bodyCls = classThemeOf(document.body);
+    if (bodyCls) return bodyCls;
+    const docCls = classThemeOf(document.documentElement);
+    if (docCls) return docCls;
+  }
+
+  // Fall back to computed host background luminance, then prefers-color-scheme: light
+  const prefersLight =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? Boolean(window.matchMedia('(prefers-color-scheme: light)')?.matches)
+      : false;
+
+  const bgLayers: string[] = [];
+  if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    const seen = new Set<Element>();
+    let node: Element | null = container;
+    while (node) {
+      seen.add(node);
+      bgLayers.push(window.getComputedStyle(node).backgroundColor);
+      node = node.parentElement;
+    }
+    if (typeof document !== 'undefined') {
+      if (document.body && !seen.has(document.body)) {
+        bgLayers.push(window.getComputedStyle(document.body).backgroundColor);
+      }
+      if (document.documentElement && !seen.has(document.documentElement)) {
+        bgLayers.push(window.getComputedStyle(document.documentElement).backgroundColor);
+      }
+    }
+  }
+
+  return resolveThemeFromBackgroundLayers(bgLayers, prefersLight);
 }
 
 function findNode(root: PlanNode, id: string | null): PlanNode | null {
@@ -300,20 +468,32 @@ export function renderPlan(
   mountPoint.appendChild(rootEl);
 
   let themeObserver: MutationObserver | null = null;
+  let schemeMedia: MediaQueryList | null = null;
+  const syncAutoTheme = () => {
+    if (explicitTheme) return;
+    const next = resolveInitialTheme(container, 'auto');
+    if (next !== theme) {
+      theme = next;
+      rootEl.setAttribute('data-theme', theme);
+      paint();
+    }
+  };
   if (!explicitTheme && typeof MutationObserver !== 'undefined') {
-    themeObserver = new MutationObserver(() => {
-      if (explicitTheme) return;
-      const next = resolveInitialTheme(container, 'auto');
-      if (next !== theme) {
-        theme = next;
-        rootEl.setAttribute('data-theme', theme);
-        paint();
-      }
-    });
+    themeObserver = new MutationObserver(syncAutoTheme);
     themeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-theme'],
+      attributeFilter: ['data-theme', 'class'],
     });
+    if (document.body) {
+      themeObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['data-theme', 'class'],
+      });
+    }
+  }
+  if (!explicitTheme && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    schemeMedia = window.matchMedia('(prefers-color-scheme: light)');
+    schemeMedia.addEventListener?.('change', syncAutoTheme);
   }
 
   const selectNode = (id: string | null) => {
@@ -646,6 +826,7 @@ export function renderPlan(
     },
     destroy() {
       themeObserver?.disconnect();
+      schemeMedia?.removeEventListener?.('change', syncAutoTheme);
       clearNode(mountPoint);
     },
   };

@@ -48,32 +48,30 @@ export {
 } from './units';
 export { PgPlanElement, registerElement } from './web-component';
 
-import { autoAttach, upgradeDeclarativeElements } from './auto-attach';
-import type { ThemeMode, ViewMode } from './types';
+import {
+  autoAttach,
+  bootstrapDocument,
+  resolveAutoAttachScriptConfig,
+  upgradeDeclarativeElements,
+} from './auto-attach';
 import { registerElement } from './web-component';
 
 registerElement('pg-plan');
 
-// Capture currentScript synchronously before DOMContentLoaded
+// Capture currentScript synchronously before DOMContentLoaded; when null (async / type="module"),
+// resolveAutoAttachScriptConfig falls back to document.querySelector('script[data-auto-attach]').
 if (typeof document !== 'undefined') {
-  const curScript = document.currentScript as HTMLScriptElement | null;
-  const shouldAutoAttach = Boolean(curScript?.hasAttribute('data-auto-attach'));
-  const scriptMode = curScript?.getAttribute('data-mode');
-  const scriptTheme = curScript?.getAttribute('data-theme') as ThemeMode | null;
-  const scriptView = curScript?.getAttribute('data-view') as ViewMode | null;
+  const sawCurrentScriptWithoutAttr = Boolean(
+    document.currentScript && !document.currentScript.hasAttribute('data-auto-attach')
+  );
+  const capturedConfig = resolveAutoAttachScriptConfig(document);
 
   const boot = () => {
-    upgradeDeclarativeElements(document);
-    if (shouldAutoAttach) {
-      autoAttach(document, {
-        mode:
-          scriptMode === 'replace' || scriptMode === 'toggle' || scriptMode === 'below'
-            ? scriptMode
-            : 'toggle',
-        theme: scriptTheme ?? undefined,
-        view: scriptView ?? undefined,
-      });
+    if (sawCurrentScriptWithoutAttr) {
+      upgradeDeclarativeElements(document);
+      return;
     }
+    bootstrapDocument(document, capturedConfig);
   };
 
   if (document.readyState === 'loading') {

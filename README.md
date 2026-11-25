@@ -15,19 +15,30 @@ Try the live demo at **[https://pgprism.dev/](https://pgprism.dev/)** (also serv
 Install from npm:
 
 ```sh
-npm install pgprism@alpha
+npm install pgprism@0.1.0-beta.1
 ```
 
-Or drop the prebuilt script directly into HTML from `https://pgprism.dev/pgprism.iife.js`.
+Or drop the pinned prebuilt script directly into HTML:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js" data-auto-attach></script>
+```
+
+For production pages, pin `0.1.0-beta.1` on jsDelivr, unpkg (`https://unpkg.com/pgprism@0.1.0-beta.1/dist/pgprism.iife.js`), or vendor `dist/pgprism.iife.js` locally. `https://pgprism.dev/pgprism.iife.js` is available as a rolling preview URL tracking latest `main`.
 
 ## Four integration modes
 
 ### Mode 1 — Zero-config auto-attach
 
-Add `data-auto-attach` to the script tag for static blogs and HTML reports:
+Add `data-auto-attach` to the script tag for static blogs and HTML reports (`async` and `defer` are supported):
 
 ```html
-<script src="dist/pgprism.iife.js" data-auto-attach data-mode="toggle"></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js"
+  data-auto-attach
+  data-mode="toggle"
+  async
+></script>
 ```
 
 Or call `autoAttach` from JavaScript:

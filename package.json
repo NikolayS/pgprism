@@ -1,6 +1,6 @@
 {
   "name": "pgprism",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-beta.1",
   "description": "Tiny, zero-dependency TypeScript visualizer and JSON-to-text translator for PostgreSQL EXPLAIN plans (PG 15-19)",
   "license": "MIT",
   "type": "module",

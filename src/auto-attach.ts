@@ -237,6 +237,46 @@ export function autoAttach(
   };
 }
 
+export interface AutoAttachScriptConfig {
+  mode: 'toggle' | 'replace' | 'below';
+  theme?: ThemeMode;
+  view?: ViewMode;
+}
+
+export function resolveAutoAttachScriptConfig(doc: Document): AutoAttachScriptConfig | null {
+  const cur = (doc.currentScript ?? null) as Element | null;
+  // document.currentScript is null for async, defer/dynamic, or type="module" scripts;
+  // fall back to querying <script[data-auto-attach]> directly.
+  const scriptEl =
+    cur ?? (typeof doc.querySelector === 'function' ? doc.querySelector('script[data-auto-attach]') : null);
+  if (!scriptEl || !scriptEl.hasAttribute('data-auto-attach')) return null;
+
+  const rawMode = scriptEl.getAttribute('data-mode');
+  const mode: 'toggle' | 'replace' | 'below' =
+    rawMode === 'replace' || rawMode === 'toggle' || rawMode === 'below' ? rawMode : 'toggle';
+  const rawTheme = scriptEl.getAttribute('data-theme') as ThemeMode | null;
+  const rawView = scriptEl.getAttribute('data-view') as ViewMode | null;
+  return {
+    mode,
+    theme: rawTheme ?? undefined,
+    view: rawView ?? undefined,
+  };
+}
+
+export function bootstrapDocument(
+  doc: Document,
+  capturedConfig?: AutoAttachScriptConfig | null
+): AutoAttachResult | null {
+  upgradeDeclarativeElements(doc);
+  const cfg = capturedConfig ?? resolveAutoAttachScriptConfig(doc);
+  if (!cfg) return null;
+  return autoAttach(doc, {
+    mode: cfg.mode,
+    theme: cfg.theme,
+    view: cfg.view,
+  });
+}
+
 export function upgradeDeclarativeElements(
   root: ParentNode = typeof document !== 'undefined' ? document : ({} as ParentNode)
 ): AutoAttachResult {
