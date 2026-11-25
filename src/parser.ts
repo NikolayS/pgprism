@@ -2,9 +2,11 @@ import type {
   BufferStats,
   IoTimingStats,
   JitStats,
+  NodeTypeSummary,
   ParsedExplain,
   PlanNode,
   PlanningStats,
+  RelationSummary,
   SerializationStats,
   SortGroupStats,
   TriggerInfo,
@@ -244,6 +246,7 @@ function createEmptyNode(id: string, depth: number): PlanNode {
     neverExecuted: false,
     inclusiveTimeMs: 0,
     exclusiveTimeMs: 0,
+    exclusiveCpuMs: 0,
     pctExecutionTime: 0,
     pctExclusiveTime: 0,
     inclusiveCost: 0,
@@ -256,6 +259,8 @@ function createEmptyNode(id: string, depth: number): PlanNode {
     exclusiveBuffers: emptyBufferStats(),
     totalBufferBlocks: 0,
     exclusiveBufferBlocks: 0,
+    totalDiskBlocks: 0,
+    exclusiveDiskBlocks: 0,
     exclusiveIoMs: 0,
     plans: [],
   };
@@ -1109,21 +1114,7 @@ function parseJitTextLines(lines: string[], jit: JitStats): void {
   }
 }
 
-function parseTextPlan(raw: string): Omit<
-  ParsedExplain,
-  | 'effectiveTotalTimeMs'
-  | 'effectiveTotalCost'
-  | 'effectiveTotalBufferBlocks'
-  | 'effectiveTotalIoMs'
-  | 'maxNodeExclusiveTimeMs'
-  | 'maxNodeInclusiveTimeMs'
-  | 'maxNodeBufferBlocks'
-  | 'maxNodeRows'
-  | 'maxNodeCost'
-  | 'maxNodeIoMs'
-  | 'hotPathIds'
-  | 'nodeCount'
-> {
+function parseTextPlan(raw: string): Omit<ParsedExplain, ComputedMetricFields> {
   const lines = stripPsqlDecorations(raw);
   if (lines.length === 0) {
     throw new Error('Empty EXPLAIN input');
@@ -1346,7 +1337,7 @@ function parseTextPlan(raw: string): Omit<
     } else if (trimmed.startsWith('Query Parameters:')) {
       queryParameters = trimmed.slice('Query Parameters:'.length).trim();
     } else if (trimmed.startsWith('Trigger')) {
-      const m = /^Trigger(?:\s+(\S+))?(?:\s+for constraint\s+(\S+))?(?:\s+on\s+(\S+))?:\s*(?:time=(\d+(?:\.\d+)?)\s+)?calls=(\d+)$/.exec(trimmed);
+      const m = /^Trigger(?:\s+(.+?))?(?:\s+for constraint\s+(\S+))?(?:\s+on\s+(\S+))?:\s*(?:time=(\d+(?:\.\d+)?)\s+)?calls=(\d+)$/.exec(trimmed);
       if (m) {
         triggers.push({
           name: m[1] ?? m[2] ?? 'Trigger',
@@ -1405,21 +1396,28 @@ function detectPlanFlags(
   return { isAnalyze, hasCosts, hasBuffers, hasTiming };
 }
 
-function computeMetrics(base: Omit<
-  ParsedExplain,
+type ComputedMetricFields =
   | 'effectiveTotalTimeMs'
   | 'effectiveTotalCost'
   | 'effectiveTotalBufferBlocks'
+  | 'effectiveTotalDiskBlocks'
   | 'effectiveTotalIoMs'
+  | 'effectiveTotalCpuMs'
   | 'maxNodeExclusiveTimeMs'
   | 'maxNodeInclusiveTimeMs'
   | 'maxNodeBufferBlocks'
+  | 'maxNodeDiskBlocks'
   | 'maxNodeRows'
   | 'maxNodeCost'
   | 'maxNodeIoMs'
   | 'hotPathIds'
   | 'nodeCount'
->): ParsedExplain {
+  | 'neverExecutedCount'
+  | 'byRelation'
+  | 'byNodeType'
+  | 'subplanTargets';
+
+function computeMetrics(base: Omit<ParsedExplain, ComputedMetricFields>): ParsedExplain {
   const { plan } = base;
 
   const executedCtes = new Set<string>();
@@ -1508,14 +1506,19 @@ function computeMetrics(base: Omit<
     exB.temp.written = Math.max(0, node.buffers.temp.written - sumChild((b) => b.temp.written));
     node.exclusiveBuffers = exB;
     node.exclusiveBufferBlocks = sumBufferBlocks(exB);
+    node.totalDiskBlocks =
+      node.buffers.shared.read + node.buffers.local.read + node.buffers.temp.read + node.buffers.temp.written;
+    node.exclusiveDiskBlocks =
+      exB.shared.read + exB.local.read + exB.temp.read + exB.temp.written;
 
-    // I/O timing
+    // I/O timing & estimated CPU* split
     const nodeIo = (node.ioTimings?.totalReadMs ?? 0) + (node.ioTimings?.totalWriteMs ?? 0);
     const childIo = node.plans.reduce(
-      (acc, c) => acc + (c.ioTimings?.totalReadMs ?? 0) + (c.ioTimings?.totalWriteMs ?? 0),
+      (acc, c) => (isLazyCteInitPlan(c) ? acc : acc + (c.ioTimings?.totalReadMs ?? 0) + (c.ioTimings?.totalWriteMs ?? 0)),
       0
     );
     node.exclusiveIoMs = Math.max(0, nodeIo - childIo);
+    node.exclusiveCpuMs = Math.max(0, node.exclusiveTimeMs - node.exclusiveIoMs);
 
     return childCount;
   };
@@ -1531,15 +1534,39 @@ function computeMetrics(base: Omit<
 
   const effectiveTotalCost = plan.inclusiveCost;
   const effectiveTotalBufferBlocks = plan.totalBufferBlocks;
+  const effectiveTotalDiskBlocks = plan.totalDiskBlocks;
   const effectiveTotalIoMs =
     (plan.ioTimings?.totalReadMs ?? 0) + (plan.ioTimings?.totalWriteMs ?? 0);
 
   let maxNodeExclusiveTimeMs = 0;
   let maxNodeInclusiveTimeMs = 0;
   let maxNodeBufferBlocks = 0;
+  let maxNodeDiskBlocks = 0;
   let maxNodeRows = 0;
   let maxNodeCost = 0;
   let maxNodeIoMs = 0;
+  let neverExecutedCount = 0;
+
+  const relMap = new Map<string, RelationSummary & { _bestTime: number }>();
+  const ntMap = new Map<string, NodeTypeSummary & { _bestTime: number }>();
+  const subplanTargets: Record<string, string> = {};
+
+  const accStat = <T extends { nodeCount: number; exclusiveTimeMs: number; exclusiveIoMs: number; exclusiveBufferBlocks: number; sharedHit: number; sharedRead: number; hottestNodeId: string; nodeIds: string[]; _bestTime: number }>(
+    entry: T,
+    node: PlanNode
+  ): void => {
+    entry.nodeCount++;
+    entry.exclusiveTimeMs += node.exclusiveTimeMs;
+    entry.exclusiveIoMs += node.exclusiveIoMs;
+    entry.exclusiveBufferBlocks += node.exclusiveBufferBlocks;
+    entry.sharedHit += node.exclusiveBuffers.shared.hit;
+    entry.sharedRead += node.exclusiveBuffers.shared.read;
+    entry.nodeIds.push(node.id);
+    if (node.exclusiveTimeMs > entry._bestTime) {
+      entry._bestTime = node.exclusiveTimeMs;
+      entry.hottestNodeId = node.id;
+    }
+  };
 
   const walkTopDown = (node: PlanNode) => {
     if (effectiveTotalTimeMs > 0) {
@@ -1549,14 +1576,93 @@ function computeMetrics(base: Omit<
     if (node.exclusiveTimeMs > maxNodeExclusiveTimeMs) maxNodeExclusiveTimeMs = node.exclusiveTimeMs;
     if (node.inclusiveTimeMs > maxNodeInclusiveTimeMs) maxNodeInclusiveTimeMs = node.inclusiveTimeMs;
     if (node.totalBufferBlocks > maxNodeBufferBlocks) maxNodeBufferBlocks = node.totalBufferBlocks;
+    if (node.totalDiskBlocks > maxNodeDiskBlocks) maxNodeDiskBlocks = node.totalDiskBlocks;
     if (node.totalActualRows > maxNodeRows) maxNodeRows = node.totalActualRows;
     if (node.inclusiveCost > maxNodeCost) maxNodeCost = node.inclusiveCost;
+    if (node.neverExecuted) neverExecutedCount++;
     const io = (node.ioTimings?.totalReadMs ?? 0) + (node.ioTimings?.totalWriteMs ?? 0);
     if (io > maxNodeIoMs) maxNodeIoMs = io;
+
+    if (node.subplanName) {
+      subplanTargets[node.subplanName] = node.id;
+    }
+
+    let relName: string | undefined;
+    let relKind: 'table' | 'index' | 'cte' = 'table';
+    if (node.relationName) {
+      relName = node.schema ? `${node.schema}.${node.relationName}` : node.relationName;
+    } else if (node.indexName) {
+      relName = node.indexName;
+      relKind = 'index';
+    } else if (node.cteName && node.nodeType === 'CTE Scan') {
+      relName = `CTE ${node.cteName}`;
+      relKind = 'cte';
+    }
+    if (relName) {
+      let cur = relMap.get(relName);
+      if (!cur) {
+        cur = {
+          name: relName,
+          kind: relKind,
+          nodeCount: 0,
+          exclusiveTimeMs: 0,
+          pctTime: 0,
+          exclusiveIoMs: 0,
+          exclusiveBufferBlocks: 0,
+          sharedHit: 0,
+          sharedRead: 0,
+          tempBlocks: 0,
+          hottestNodeId: node.id,
+          nodeIds: [],
+          _bestTime: -1,
+        };
+        relMap.set(relName, cur);
+      }
+      accStat(cur, node);
+      cur.tempBlocks += node.exclusiveBuffers.temp.read + node.exclusiveBuffers.temp.written;
+    }
+
+    let nt = ntMap.get(node.nodeType);
+    if (!nt) {
+      nt = {
+        nodeType: node.nodeType,
+        nodeCount: 0,
+        exclusiveTimeMs: 0,
+        pctTime: 0,
+        exclusiveIoMs: 0,
+        exclusiveBufferBlocks: 0,
+        sharedHit: 0,
+        sharedRead: 0,
+        hottestNodeId: node.id,
+        nodeIds: [],
+        _bestTime: -1,
+      };
+      ntMap.set(node.nodeType, nt);
+    }
+    accStat(nt, node);
 
     for (const c of node.plans) walkTopDown(c);
   };
   walkTopDown(plan);
+
+  const totalExclTimeSum = Array.from(ntMap.values()).reduce((s, x) => s + x.exclusiveTimeMs, 0);
+  const pctDenom = effectiveTotalTimeMs > 0 ? effectiveTotalTimeMs : totalExclTimeSum;
+
+  const byRelation: RelationSummary[] = Array.from(relMap.values())
+    .map(({ _bestTime: _drop, ...rest }) => ({
+      ...rest,
+      pctTime: pctDenom > 0 ? Math.min(100, (rest.exclusiveTimeMs / pctDenom) * 100) : 0,
+    }))
+    .sort((a, b) => b.exclusiveTimeMs - a.exclusiveTimeMs || b.exclusiveBufferBlocks - a.exclusiveBufferBlocks);
+
+  const byNodeType: NodeTypeSummary[] = Array.from(ntMap.values())
+    .map(({ _bestTime: _drop, ...rest }) => ({
+      ...rest,
+      pctTime: pctDenom > 0 ? Math.min(100, (rest.exclusiveTimeMs / pctDenom) * 100) : 0,
+    }))
+    .sort((a, b) => b.exclusiveTimeMs - a.exclusiveTimeMs || b.exclusiveBufferBlocks - a.exclusiveBufferBlocks);
+
+  const effectiveTotalCpuMs = Math.max(0, effectiveTotalTimeMs - effectiveTotalIoMs);
 
   // Compute hot path (nodes accounting for >= 25% inclusive time or leading to the slowest exclusive node)
   const hotPathIds = new Set<string>();
@@ -1582,33 +1688,26 @@ function computeMetrics(base: Omit<
     effectiveTotalTimeMs,
     effectiveTotalCost,
     effectiveTotalBufferBlocks,
+    effectiveTotalDiskBlocks,
     effectiveTotalIoMs,
+    effectiveTotalCpuMs,
     maxNodeExclusiveTimeMs,
     maxNodeInclusiveTimeMs,
     maxNodeBufferBlocks,
+    maxNodeDiskBlocks,
     maxNodeRows,
     maxNodeCost,
     maxNodeIoMs,
     hotPathIds,
     nodeCount,
+    neverExecutedCount,
+    byRelation,
+    byNodeType,
+    subplanTargets,
   };
 }
 
-function parseJsonExplain(rawInput: string | unknown): Omit<
-  ParsedExplain,
-  | 'effectiveTotalTimeMs'
-  | 'effectiveTotalCost'
-  | 'effectiveTotalBufferBlocks'
-  | 'effectiveTotalIoMs'
-  | 'maxNodeExclusiveTimeMs'
-  | 'maxNodeInclusiveTimeMs'
-  | 'maxNodeBufferBlocks'
-  | 'maxNodeRows'
-  | 'maxNodeCost'
-  | 'maxNodeIoMs'
-  | 'hotPathIds'
-  | 'nodeCount'
-> {
+function parseJsonExplain(rawInput: string | unknown): Omit<ParsedExplain, ComputedMetricFields> {
   let rawJsonString: string | undefined;
   let parsed: unknown;
   let rawQueryId: string | undefined;
@@ -1721,8 +1820,9 @@ export function parsePlan(input: string | unknown): ParsedExplain {
     if (!trimmed) {
       throw new Error('Empty EXPLAIN input');
     }
-    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      return computeMetrics(parseJsonExplain(trimmed));
+    const stripped = stripPsqlDecorations(trimmed).join('\n').trim();
+    if (stripped.startsWith('[') || stripped.startsWith('{')) {
+      return computeMetrics(parseJsonExplain(stripped));
     }
     return computeMetrics(parseTextPlan(trimmed));
   }

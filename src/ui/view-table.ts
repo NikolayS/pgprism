@@ -1,8 +1,8 @@
-import type { ParsedExplain, PlanNode } from '../types';
+import type { MetricMode, ParsedExplain, PlanNode } from '../types';
 import {
   formatBlocks,
   formatCompactCount,
-  formatFactor,
+  formatCount,
   formatMs,
 } from '../units';
 import { h } from './dom';
@@ -17,8 +17,10 @@ import {
 export interface TableViewOpts {
   selectedId: string | null;
   collapsed: Set<string>;
+  metric: MetricMode;
   search: string;
   hotOnly: boolean;
+  hideUnused: boolean;
   onSelect: (id: string) => void;
   onToggleCollapse: (id: string) => void;
 }
@@ -28,6 +30,7 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
   let seqCounter = 1;
 
   const walk = (n: PlanNode) => {
+    if (opts.hideUnused && n.neverExecuted) return;
     const seq = seqCounter++;
     rows.push({ node: n, seq });
     if (!opts.collapsed.has(n.id)) {
@@ -35,6 +38,11 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
     }
   };
   walk(parsed.plan);
+
+  const isBufMetric = opts.metric === 'buffers' || opts.metric === 'diskReads';
+  const isRowMetric = opts.metric === 'rows';
+  const isInclMetric = opts.metric === 'inclusiveTime';
+  const isTimeMetric = opts.metric === 'exclusiveTime' || opts.metric === 'ioTime' || opts.metric === 'cost';
 
   const thead = h(
     'thead',
@@ -44,11 +52,11 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
       null,
       h('th', { className: 'num' }, '#'),
       h('th', null, 'Node'),
-      h('th', { className: 'num' }, parsed.hasTiming ? 'Excl. time' : 'Excl. cost'),
-      h('th', { className: 'num' }, parsed.hasTiming ? 'Incl. time' : 'Incl. cost'),
-      h('th', { className: 'num' }, parsed.isAnalyze ? 'Rows (act / est)' : 'Est. rows'),
+      h('th', { className: `num ${isBufMetric ? 'active-col' : ''}` }, opts.metric === 'diskReads' ? 'Disk reads' : 'Buffers (self / total)'),
+      h('th', { className: `num ${isTimeMetric ? 'active-col' : ''}` }, parsed.hasTiming ? 'Excl. time' : 'Excl. cost'),
+      h('th', { className: `num ${isInclMetric ? 'active-col' : ''}` }, parsed.hasTiming ? 'Incl. time' : 'Incl. cost'),
+      h('th', { className: `num ${isRowMetric ? 'active-col' : ''}` }, parsed.isAnalyze ? 'Rows (act / est)' : 'Est. rows'),
       h('th', { className: 'num' }, 'Loops'),
-      h('th', { className: 'num' }, 'Buffers (self)'),
       h('th', null, 'Flags')
     )
   );
@@ -68,13 +76,13 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
           'button',
           {
             type: 'button',
-            className: 'pgs-fold-btn',
+            className: 'pgp-fold-btn',
             title: isCollapsed ? 'Expand subtree' : 'Collapse subtree',
             'aria-label': isCollapsed ? 'Expand subtree' : 'Collapse subtree',
           },
           isCollapsed ? '▸' : '▾'
         )
-      : h('span', { className: 'pgs-fold-spacer' });
+      : h('span', { className: 'pgp-fold-spacer' });
 
     if (hasChildren) {
       foldBtn.addEventListener('click', (e) => {
@@ -83,24 +91,27 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
       });
     }
 
-    const indentPx = node.depth * 16;
+    const indentPx = node.depth * 14;
     const preview = nodeQualPreview(node);
     const titleBits: Array<Node | string> = [];
-    if (node.subplanName) {
-      titleBits.push(h('span', { className: 'pgs-pill pgs-pill-blue' }, node.subplanName));
+    if (node.depth > 0) {
+      titleBits.push(h('span', { className: 'pgp-depth-arrow' }, '->'));
     }
-    titleBits.push(h('span', { className: 'pgs-node-title', title: node.displayTitle }, node.displayTitle));
+    if (node.subplanName) {
+      titleBits.push(h('span', { className: 'pgp-pill pgp-pill-blue' }, node.subplanName));
+    }
+    titleBits.push(h('span', { className: 'pgp-node-title', title: node.displayTitle }, node.displayTitle));
     if (isCollapsed && hasChildren) {
-      titleBits.push(h('span', { className: 'pgs-pill' }, `+${countDescendants(node)}`));
+      titleBits.push(h('span', { className: 'pgp-pill' }, `+${countDescendants(node)}`));
     }
     if (preview) {
-      titleBits.push(h('span', { className: 'pgs-node-sub', title: preview }, preview));
+      titleBits.push(h('span', { className: 'pgp-node-sub', title: preview }, preview));
     }
 
     const nodeCell = h(
       'td',
       null,
-      h('div', { className: 'pgs-node-cell', style: indentPx ? { paddingLeft: `${indentPx}px` } : undefined }, foldBtn, ...titleBits)
+      h('div', { className: 'pgp-node-cell', style: indentPx ? { paddingLeft: `${indentPx}px` } : undefined }, foldBtn, ...titleBits)
     );
 
     // Exclusive time / cost
@@ -112,24 +123,42 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
     const exclText = parsed.hasTiming
       ? formatMs(node.exclusiveTimeMs)
       : node.exclusiveCost.toFixed(1);
+    const hasSplitIo = parsed.hasTiming && parsed.effectiveTotalIoMs > 0 && node.exclusiveTimeMs > 0;
+    const denomTime = parsed.effectiveTotalTimeMs || 1;
+    const cpuBarPct = hasSplitIo ? Math.min(100, (node.exclusiveCpuMs / denomTime) * 100) : Math.min(100, exclPct);
+    const ioBarPct = hasSplitIo ? Math.min(100 - cpuBarPct, (node.exclusiveIoMs / denomTime) * 100) : 0;
+    const exclTip = hasSplitIo
+      ? `Self CPU*: ${formatMs(node.exclusiveCpuMs)} · Self I/O: ${formatMs(node.exclusiveIoMs)}`
+      : undefined;
+    const ioNodePct = parsed.effectiveTotalIoMs > 0 ? Math.min(100, (node.exclusiveIoMs / parsed.effectiveTotalIoMs) * 100) : 0;
+    const timeHeat =
+      opts.metric === 'ioTime'
+        ? heatClass(ioNodePct)
+        : opts.metric === 'exclusiveTime' || opts.metric === 'cost'
+          ? heatClass(exclPct)
+          : '';
     const exclCell = h(
       'td',
-      { className: `num ${heatClass(exclPct)}` },
+      { className: `num ${timeHeat}`, title: exclTip },
       h(
         'div',
-        { className: 'pgs-bar-wrap' },
+        { className: 'pgp-bar-wrap' },
         h('span', null, `${exclText}${parsed.hasTiming ? ` · ${exclPct.toFixed(0)}%` : ''}`),
         h(
           'div',
-          { className: 'pgs-bar-track' },
-          h('div', { className: 'pgs-bar-fill', style: { width: `${Math.min(100, exclPct).toFixed(1)}%` } })
+          { className: 'pgp-bar-track' },
+          h('div', { className: 'pgp-bar-fill', style: { width: `${cpuBarPct.toFixed(1)}%` } }),
+          ioBarPct > 0
+            ? h('div', { className: 'pgp-bar-fill blue', style: { width: `${ioBarPct.toFixed(1)}%` } })
+            : null
         )
       )
     );
 
+    const inclPct = parsed.hasTiming && parsed.effectiveTotalTimeMs > 0 ? Math.min(100, (node.inclusiveTimeMs / parsed.effectiveTotalTimeMs) * 100) : 0;
     const inclCell = h(
       'td',
-      { className: 'num' },
+      { className: `num ${isInclMetric ? heatClass(inclPct) : ''}` },
       parsed.hasTiming ? formatMs(node.inclusiveTimeMs) : node.inclusiveCost.toFixed(1)
     );
 
@@ -141,37 +170,85 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
         rowsStr = '0 / ' + formatCompactCount(node.totalPlanRows);
       } else {
         rowsStr = `${formatCompactCount(node.totalActualRows)} / ${formatCompactCount(node.totalPlanRows)}`;
-        if (node.rowEstimateFactor >= 100 && (node.totalActualRows >= 100 || node.totalPlanRows >= 100)) {
-          rowHeat = 'pgs-heat-2';
+        if (isRowMetric) {
+          rowHeat = heatClass((node.totalActualRows / (parsed.maxNodeRows || 1)) * 100);
+        } else if (node.rowEstimateFactor >= 100 && (node.totalActualRows >= 100 || node.totalPlanRows >= 100)) {
+          rowHeat = 'pgp-heat-2';
         } else if (node.rowEstimateFactor >= 10 && (node.totalActualRows >= 100 || node.totalPlanRows >= 100)) {
-          rowHeat = 'pgs-heat-1';
+          rowHeat = 'pgp-heat-1';
         }
       }
     }
     const rowsCell = h('td', { className: `num ${rowHeat}` }, rowsStr);
 
+    const loops = node.actualLoops;
+    const loopsTip =
+      loops !== undefined && loops > 1 && node.actualTotalTime !== undefined
+        ? `${formatCount(loops)} loops × ${formatMs(node.actualTotalTime)} avg`
+        : undefined;
     const loopsCell = h(
       'td',
-      { className: 'num' },
-      node.actualLoops !== undefined ? formatCompactCount(node.actualLoops) : '—'
+      { className: 'num', title: loopsTip },
+      loops !== undefined ? formatCompactCount(loops) : '—',
+      loops !== undefined && loops > 1 && node.actualTotalTime !== undefined
+        ? h('span', { className: 'pgp-subval' }, `${formatMs(node.actualTotalTime)}/lp`)
+        : null
     );
 
-    // Buffers (self exclusive in IEC units, tooltip shows raw blocks)
+    // Buffers (first-class deterministic page work: self + % of total + 0-based heatbar + inclusive)
     const exB = node.exclusiveBuffers;
-    const exHitRead = exB.shared.hit + exB.shared.read + exB.local.hit + exB.local.read;
     const exTemp = exB.temp.read + exB.temp.written;
-    const bufParts: string[] = [];
-    if (exB.shared.hit > 0) bufParts.push(`${formatBlocks(exB.shared.hit)} hit`);
-    if (exB.shared.read > 0) bufParts.push(`${formatBlocks(exB.shared.read)} read`);
-    if (exTemp > 0) bufParts.push(`${formatBlocks(exTemp)} tmp`);
-    if (exB.local.hit + exB.local.read > 0) bufParts.push(`${formatBlocks(exB.local.hit + exB.local.read)} loc`);
-    const bufStr = bufParts.length > 0 ? bufParts.join(', ') : parsed.hasBuffers ? '0 B' : '—';
-    const bufTip = `Self: hit=${exB.shared.hit} read=${exB.shared.read} dirtied=${exB.shared.dirtied} written=${exB.shared.written} temp_r=${exB.temp.read} temp_w=${exB.temp.written} blks | Total node: ${node.totalBufferBlocks} blks`;
-    const bufCell = h(
-      'td',
-      { className: `num ${exB.shared.read >= 128 || exTemp > 0 ? 'pgs-heat-1' : ''}`, title: bufTip },
-      exHitRead + exTemp > 0 ? bufStr : bufStr
-    );
+    const bufDenom = parsed.effectiveTotalBufferBlocks || parsed.maxNodeBufferBlocks || 0;
+    const bufSelfPct = bufDenom > 0 ? Math.min(100, (node.exclusiveBufferBlocks / bufDenom) * 100) : 0;
+    const diskDenom = parsed.effectiveTotalDiskBlocks || parsed.maxNodeDiskBlocks || 0;
+    const diskSelfPct = diskDenom > 0 ? Math.min(100, (node.exclusiveDiskBlocks / diskDenom) * 100) : 0;
+
+    const exHitDenom = exB.shared.hit + exB.shared.read;
+    const selfHitStr = exHitDenom > 0 ? ` | Self hit: ${((exB.shared.hit / exHitDenom) * 100).toFixed(1)}%` : '';
+    const bufTip = `Self: hit=${exB.shared.hit} read=${exB.shared.read} dirtied=${exB.shared.dirtied} written=${exB.shared.written} local=${exB.local.hit + exB.local.read} temp=${exTemp} blks${selfHitStr} | Total subtree: ${formatBlocks(node.totalBufferBlocks)} (${node.totalBufferBlocks} blks)`;
+
+    const activeBufPct = opts.metric === 'diskReads' ? diskSelfPct : bufSelfPct;
+    const activeBufBlocks = opts.metric === 'diskReads' ? node.exclusiveDiskBlocks : node.exclusiveBufferBlocks;
+    const activeTotBlocks = opts.metric === 'diskReads' ? node.totalDiskBlocks : node.totalBufferBlocks;
+    const bufHeat = isBufMetric
+      ? heatClass(activeBufPct)
+      : exB.shared.read >= 128 || exTemp > 0
+        ? 'pgp-heat-1'
+        : '';
+
+    const bufSubParts: string[] = [];
+    if (node.plans.length > 0 && activeTotBlocks !== activeBufBlocks) {
+      bufSubParts.push(`incl ${formatBlocks(activeTotBlocks)}`);
+    }
+    if (exB.shared.read > 0 && opts.metric !== 'diskReads') bufSubParts.push(`${formatBlocks(exB.shared.read)} rd`);
+    if (exTemp > 0) bufSubParts.push(`${formatBlocks(exTemp)} tmp`);
+
+    const bufCell = parsed.hasBuffers
+      ? h(
+          'td',
+          { className: `num ${bufHeat}`, title: bufTip },
+          h(
+            'div',
+            { className: 'pgp-bar-wrap' },
+            h(
+              'span',
+              null,
+              activeBufBlocks > 0
+                ? `${formatBlocks(activeBufBlocks)} · ${activeBufPct.toFixed(0)}%`
+                : '0 B'
+            ),
+            h(
+              'div',
+              { className: 'pgp-bar-track' },
+              h('div', {
+                className: `pgp-bar-fill ${opts.metric === 'diskReads' ? '' : 'blue'}`,
+                style: { width: `${activeBufPct.toFixed(1)}%` },
+              })
+            ),
+            bufSubParts.length > 0 ? h('span', { className: 'pgp-subval' }, bufSubParts.join(' · ')) : null
+          )
+        )
+      : h('td', { className: 'num' }, '—');
 
     // Flags
     const flags = getNodeFlags(node);
@@ -180,11 +257,11 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
       null,
       h(
         'div',
-        { className: 'pgs-btn-group' },
+        { className: 'pgp-btn-group' },
         ...flags.map((f) =>
           h(
             'span',
-            { className: `pgs-pill ${f.tone !== 'neutral' ? `pgs-pill-${f.tone}` : ''}` },
+            { className: `pgp-pill ${f.tone !== 'neutral' ? `pgp-pill-${f.tone}` : ''}` },
             f.label
           )
         )
@@ -195,22 +272,26 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
       'tr',
       {
         'data-node-id': node.id,
-        className: [opts.selectedId === node.id ? 'selected' : '', dimmed ? 'dimmed' : '']
+        className: [
+          opts.selectedId === node.id ? 'selected' : '',
+          dimmed ? 'dimmed' : '',
+          node.neverExecuted ? 'never-exec' : '',
+        ]
           .filter(Boolean)
           .join(' '),
       },
       h('td', { className: 'num' }, String(seq)),
       nodeCell,
+      bufCell,
       exclCell,
       inclCell,
       rowsCell,
       loopsCell,
-      bufCell,
       flagsCell
     );
     tr.addEventListener('click', () => opts.onSelect(node.id));
     tbody.appendChild(tr);
   }
 
-  return h('table', { className: 'pgs-table' }, thead, tbody);
+  return h('table', { className: 'pgp-table' }, thead, tbody);
 }

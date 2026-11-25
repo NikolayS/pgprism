@@ -38,3 +38,18 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 export function clearNode(el: Node): void {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
+
+export function attachCopyAction(btn: HTMLButtonElement, getText: () => string, label = btn.textContent || 'Copy'): void {
+  btn.addEventListener('click', () => {
+    const done = () => {
+      btn.textContent = 'Copied';
+      setTimeout(() => {
+        btn.textContent = label;
+      }, 1400);
+    };
+    const txt = getText();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(txt).then(done).catch(() => {});
+    }
+  });
+}

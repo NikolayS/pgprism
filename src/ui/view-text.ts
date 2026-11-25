@@ -1,6 +1,6 @@
 import { parsedToText } from '../json-to-text';
 import type { ParsedExplain } from '../types';
-import { h } from './dom';
+import { attachCopyAction, h } from './dom';
 
 function highlightTextLine(line: string): HTMLElement {
   const span = h('span');
@@ -22,12 +22,12 @@ function highlightTextLine(line: string): HTMLElement {
       const head = line.slice(0, splitAt);
       const rest = line.slice(splitAt);
       const actInRest = rest.indexOf(' (actual');
-      span.appendChild(h('span', { className: 'pgs-tok-node' }, head));
+      span.appendChild(h('span', { className: 'pgp-tok-node' }, head));
       if (actInRest >= 0) {
-        span.appendChild(h('span', { className: 'pgs-tok-cost' }, rest.slice(0, actInRest)));
-        span.appendChild(h('span', { className: 'pgs-tok-act' }, rest.slice(actInRest)));
+        span.appendChild(h('span', { className: 'pgp-tok-cost' }, rest.slice(0, actInRest)));
+        span.appendChild(h('span', { className: 'pgp-tok-act' }, rest.slice(actInRest)));
       } else {
-        span.appendChild(h('span', { className: 'pgs-tok-cost' }, rest));
+        span.appendChild(h('span', { className: 'pgp-tok-cost' }, rest));
       }
       return span;
     }
@@ -35,7 +35,7 @@ function highlightTextLine(line: string): HTMLElement {
 
   const trimmed = line.trimStart();
   if (trimmed.startsWith('Buffers:') || trimmed.startsWith('I/O Timings:')) {
-    span.appendChild(h('span', { className: 'pgs-tok-buf' }, line));
+    span.appendChild(h('span', { className: 'pgp-tok-buf' }, line));
     return span;
   }
   if (
@@ -45,11 +45,11 @@ function highlightTextLine(line: string): HTMLElement {
     trimmed.includes('Disk Usage:') ||
     trimmed.includes('lossy=')
   ) {
-    span.appendChild(h('span', { className: 'pgs-tok-warn' }, line));
+    span.appendChild(h('span', { className: 'pgp-tok-warn' }, line));
     return span;
   }
   if (trimmed.startsWith('Execution Time:') || trimmed.startsWith('Planning Time:')) {
-    span.appendChild(h('span', { className: 'pgs-tok-act' }, line));
+    span.appendChild(h('span', { className: 'pgp-tok-act' }, line));
     return span;
   }
   if (arrowOrRoot.test(line)) {
@@ -66,7 +66,7 @@ export function renderCodeView(
   verboseOutput: boolean,
   onToggleVerbose: () => void
 ): HTMLElement {
-  const wrap = h('div', { className: 'pgs-code-wrap' });
+  const wrap = h('div', { className: 'pgp-code-wrap' });
 
   const content =
     mode === 'text'
@@ -83,18 +83,8 @@ export function renderCodeView(
           })()
         : JSON.stringify(parsed.rawJson ?? parsed.plan, null, 2);
 
-  const copyBtn = h('button', { type: 'button', className: 'pgs-btn pgs-btn-sm' }, 'Copy');
-  copyBtn.addEventListener('click', () => {
-    const done = () => {
-      copyBtn.textContent = 'Copied';
-      setTimeout(() => {
-        copyBtn.textContent = 'Copy';
-      }, 1400);
-    };
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(content).then(done).catch(() => {});
-    }
-  });
+  const copyBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm' }, 'Copy');
+  attachCopyAction(copyBtn, () => content, 'Copy');
 
   const infoText =
     mode === 'text'
@@ -105,11 +95,11 @@ export function renderCodeView(
         ? 'Original EXPLAIN JSON'
         : 'Normalized AST JSON';
 
-  const rightControls = h('div', { className: 'pgs-btn-group' });
+  const rightControls = h('div', { className: 'pgp-btn-group' });
   if (mode === 'text' && parsed.sourceFormat === 'json') {
     const vBtn = h(
       'button',
-      { type: 'button', className: `pgs-btn pgs-btn-sm ${verboseOutput ? 'active' : ''}` },
+      { type: 'button', className: `pgp-btn pgp-btn-sm ${verboseOutput ? 'active' : ''}` },
       'Verbose Output'
     );
     vBtn.addEventListener('click', onToggleVerbose);
@@ -118,10 +108,10 @@ export function renderCodeView(
   rightControls.appendChild(copyBtn);
 
   wrap.appendChild(
-    h('div', { className: 'pgs-code-head' }, h('span', null, infoText), rightControls)
+    h('div', { className: 'pgp-code-head' }, h('span', null, infoText), rightControls)
   );
 
-  const pre = h('pre', { className: 'pgs-pre' });
+  const pre = h('pre', { className: 'pgp-pre' });
   if (mode === 'text') {
     const lines = content.split('\n');
     for (let i = 0; i < lines.length; i++) {

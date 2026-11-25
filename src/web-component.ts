@@ -27,7 +27,7 @@ export class PgPlanElement extends BaseElement {
       if (attr) {
         this._plan = attr;
       } else {
-        const script = this.querySelector('script[type="application/json"]');
+        const script = this.querySelector('script[type="application/json"], script[type="text/plain"]');
         const pre = this.querySelector('pre');
         const txt = (script?.textContent ?? pre?.textContent ?? this.textContent ?? '').trim();
         if (txt) this._plan = txt;
@@ -51,7 +51,7 @@ export class PgPlanElement extends BaseElement {
   private readOptions(): RenderOptions {
     const viewAttr = this.getAttribute('view') as ViewMode | null;
     const themeAttr = this.getAttribute('theme') as ThemeMode | null;
-    const metricAttr = this.getAttribute('metric') as MetricMode | null;
+    const metricAttr = this.getAttribute('metric') as (MetricMode | 'auto') | null;
     const diagAttr = this.getAttribute('diagnostics');
     const maxHeight = this.getAttribute('max-height') ?? undefined;
     return {
@@ -76,7 +76,7 @@ export class PgPlanElement extends BaseElement {
     } catch (err) {
       const shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
       const msg = err instanceof Error ? err.message : String(err);
-      shadow.textContent = `pgscope error: ${msg}`;
+      shadow.textContent = `pgprism error: ${msg}`;
     }
   }
 }

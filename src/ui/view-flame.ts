@@ -8,6 +8,7 @@ export interface FlameViewOpts {
   metric: MetricMode;
   search: string;
   hotOnly: boolean;
+  hideUnused: boolean;
   onSelect: (id: string) => void;
 }
 
@@ -22,7 +23,7 @@ interface FlameSpan {
 }
 
 export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTMLElement {
-  const wrap = h('div', { className: 'pgs-flame-wrap' });
+  const wrap = h('div', { className: 'pgp-flame-wrap' });
   const q = opts.search.trim().toLowerCase();
 
   const useTime = opts.metric === 'exclusiveTime' || opts.metric === 'inclusiveTime';
@@ -30,11 +31,13 @@ export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTM
     ? parsed.effectiveTotalTimeMs || 1
     : opts.metric === 'buffers'
       ? parsed.effectiveTotalBufferBlocks || parsed.maxNodeBufferBlocks || 1
-      : opts.metric === 'ioTime'
-        ? parsed.effectiveTotalIoMs || parsed.maxNodeIoMs || 1
-        : opts.metric === 'rows'
-          ? parsed.maxNodeRows || 1
-          : parsed.effectiveTotalCost || parsed.maxNodeCost || 1;
+      : opts.metric === 'diskReads'
+        ? parsed.effectiveTotalDiskBlocks || parsed.maxNodeDiskBlocks || 1
+        : opts.metric === 'ioTime'
+          ? parsed.effectiveTotalIoMs || parsed.maxNodeIoMs || 1
+          : opts.metric === 'rows'
+            ? parsed.maxNodeRows || 1
+            : parsed.effectiveTotalCost || parsed.maxNodeCost || 1;
 
   const spans: FlameSpan[] = [];
 
@@ -49,16 +52,33 @@ export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTM
       };
     }
     if (opts.metric === 'buffers') {
+      const pct = parsed.effectiveTotalBufferBlocks > 0 ? (n.totalBufferBlocks / denom) * 100 : 0;
       return {
         incl: n.totalBufferBlocks,
         excl: n.exclusiveBufferBlocks,
-        txt: formatBlocks(n.totalBufferBlocks),
-        tip: `Self: ${formatBlocks(n.exclusiveBufferBlocks)} · Total: ${formatBlocks(n.totalBufferBlocks)}`,
+        txt: parsed.hasBuffers ? `${formatBlocks(n.exclusiveBufferBlocks)} (${pct.toFixed(0)}%)` : '—',
+        tip: `Self: ${formatBlocks(n.exclusiveBufferBlocks)} · Subtree: ${formatBlocks(n.totalBufferBlocks)} (${pct.toFixed(1)}%)`,
+      };
+    }
+    if (opts.metric === 'diskReads') {
+      const hasDisk = parsed.effectiveTotalDiskBlocks > 0 || parsed.maxNodeDiskBlocks > 0;
+      const pct = hasDisk ? (n.totalDiskBlocks / denom) * 100 : 0;
+      return {
+        incl: n.totalDiskBlocks,
+        excl: n.exclusiveDiskBlocks,
+        txt: n.totalDiskBlocks > 0 ? `${formatBlocks(n.exclusiveDiskBlocks)} (${pct.toFixed(0)}%)` : '0 B',
+        tip: `Self disk+temp: ${formatBlocks(n.exclusiveDiskBlocks)} · Subtree: ${formatBlocks(n.totalDiskBlocks)} (${pct.toFixed(1)}%)`,
       };
     }
     if (opts.metric === 'ioTime') {
       const tot = (n.ioTimings?.totalReadMs ?? 0) + (n.ioTimings?.totalWriteMs ?? 0);
-      return { incl: tot, excl: n.exclusiveIoMs, txt: tot > 0 ? formatMs(tot) : '—', tip: tot > 0 ? `Self: ${formatMs(n.exclusiveIoMs)} · Total: ${formatMs(tot)}` : '' };
+      const pct = parsed.effectiveTotalIoMs > 0 ? (tot / denom) * 100 : 0;
+      return {
+        incl: tot,
+        excl: n.exclusiveIoMs,
+        txt: tot > 0 ? `${formatMs(n.exclusiveIoMs)} (${pct.toFixed(0)}%)` : '—',
+        tip: tot > 0 ? `Self I/O: ${formatMs(n.exclusiveIoMs)} · Subtree: ${formatMs(tot)} (${pct.toFixed(1)}%)` : '',
+      };
     }
     if (opts.metric === 'rows') {
       return {
@@ -77,6 +97,7 @@ export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTM
   };
 
   const walk = (node: PlanNode, offsetPct: number) => {
+    if (opts.hideUnused && node.neverExecuted) return;
     const v = valFor(node);
     const widthPct = Math.max(0, Math.min(100 - offsetPct, (v.incl / denom) * 100));
     const selfWidthPct = Math.max(0, Math.min(widthPct, (v.excl / denom) * 100));
@@ -113,29 +134,55 @@ export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTM
 
   walk(parsed.plan, 0);
 
-  const axisEnd = useTime
-    ? formatMs(parsed.effectiveTotalTimeMs)
-    : opts.metric === 'buffers'
-      ? formatBlocks(denom)
-      : opts.metric === 'ioTime'
-        ? formatMs(denom)
-        : opts.metric === 'rows'
-          ? `${formatCompactCount(denom)} rows`
-          : denom.toFixed(0);
+  const hasAxis =
+    useTime
+      ? parsed.effectiveTotalTimeMs > 0
+      : opts.metric === 'buffers'
+        ? parsed.effectiveTotalBufferBlocks > 0
+        : opts.metric === 'diskReads'
+          ? parsed.effectiveTotalDiskBlocks > 0
+          : opts.metric === 'ioTime'
+            ? parsed.effectiveTotalIoMs > 0
+            : true;
+
+  const axisEnd = !hasAxis
+    ? '0'
+    : useTime
+      ? formatMs(parsed.effectiveTotalTimeMs)
+      : opts.metric === 'buffers' || opts.metric === 'diskReads'
+        ? formatBlocks(denom)
+        : opts.metric === 'ioTime'
+          ? formatMs(denom)
+          : opts.metric === 'rows'
+            ? `${formatCompactCount(denom)} rows`
+            : denom.toFixed(0);
+
+  const metricNoun =
+    useTime
+      ? 'time'
+      : opts.metric === 'buffers'
+        ? 'buffers'
+        : opts.metric === 'diskReads'
+          ? 'disk reads'
+          : opts.metric === 'ioTime'
+            ? 'I/O time'
+            : opts.metric === 'rows'
+              ? 'rows'
+              : 'cost';
 
   wrap.appendChild(
     h(
       'div',
-      { className: 'pgs-flame-axis' },
-      h('span', null, 'Plan node (orange = self, grey = subtree)'),
+      { className: 'pgp-flame-axis' },
+      h('span', null, `Plan node (orange = self ${metricNoun}, grey = subtree)`),
       h(
         'div',
-        { className: 'pgs-flame-ticks' },
+        { className: 'pgp-flame-ticks' },
         h('span', null, '0'),
         h('span', null, '50%'),
         h('span', null, axisEnd)
       ),
-      h('span', { style: { textAlign: 'right' } }, 'Self (total %)')
+      h('span', { style: { textAlign: 'right' } }, 'Self (subtree %)')
     )
   );
 
@@ -147,16 +194,16 @@ export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTM
 
     const track = h(
       'div',
-      { className: 'pgs-flame-track' },
+      { className: 'pgp-flame-track' },
       sp.widthPct > 0
         ? h('div', {
-            className: 'pgs-flame-incl',
+            className: 'pgp-flame-incl',
             style: { left: `${sp.startPct.toFixed(2)}%`, width: `${Math.max(0.4, sp.widthPct).toFixed(2)}%` },
           })
         : null,
       sp.selfWidthPct > 0
         ? h('div', {
-            className: 'pgs-flame-excl',
+            className: 'pgp-flame-excl',
             style: { left: `${sp.selfStartPct.toFixed(2)}%`, width: `${Math.max(0.4, sp.selfWidthPct).toFixed(2)}%` },
           })
         : null
@@ -165,26 +212,31 @@ export function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTM
     const lbl = h(
       'div',
       {
-        className: 'pgs-flame-lbl',
+        className: 'pgp-flame-lbl',
         style: node.depth > 0 ? { paddingLeft: `${node.depth * 12}px` } : undefined,
         title: node.displayTitle,
       },
-      node.depth > 0 ? h('span', { style: { color: 'var(--pgs-ink-faint)' } }, '->') : null,
-      node.subplanName ? h('span', { className: 'pgs-pill pgs-pill-blue' }, node.subplanName) : null,
-      h('span', { className: 'pgs-node-title' }, node.displayTitle)
+      node.depth > 0 ? h('span', { style: { color: 'var(--pgp-ink-faint)' } }, '->') : null,
+      node.subplanName ? h('span', { className: 'pgp-pill pgp-pill-blue' }, node.subplanName) : null,
+      h('span', { className: 'pgp-node-title' }, node.displayTitle)
     );
 
     const row = h(
       'div',
       {
         'data-node-id': node.id,
-        className: ['pgs-flame-row', opts.selectedId === node.id ? 'selected' : '', dimmed ? 'dimmed' : '']
+        className: [
+          'pgp-flame-row',
+          opts.selectedId === node.id ? 'selected' : '',
+          dimmed ? 'dimmed' : '',
+          node.neverExecuted ? 'never-exec' : '',
+        ]
           .filter(Boolean)
           .join(' '),
       },
       lbl,
       track,
-      h('div', { className: 'pgs-flame-val', title: sp.tip }, sp.label)
+      h('div', { className: 'pgp-flame-val', title: sp.tip }, sp.label)
     );
     row.addEventListener('click', () => opts.onSelect(node.id));
     wrap.appendChild(row);

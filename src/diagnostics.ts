@@ -1,5 +1,6 @@
-import type { Diagnostic, ParsedExplain, PlanNode } from './types';
-import { formatBlocks, formatCompactCount, formatFactor, formatKbAsIec, formatMs } from './units';
+import { parsePlan } from './parser';
+import type { Diagnostic, ParsedExplain, PlanAnalysis, PlanNode } from './types';
+import { formatBlocks, formatCompactCount, formatFactor, formatKbAsIec, formatMs, sumBufferBlocks } from './units';
 
 const SEV_WEIGHT = { high: 0, med: 1, low: 2 };
 
@@ -197,6 +198,19 @@ export function diagnosePlan(parsed: ParsedExplain): Diagnostic[] {
 
   walk(parsed.plan);
 
+  // Plan-level missing BUFFERS tip on ANALYZE plans
+  if (parsed.isAnalyze && !parsed.hasBuffers) {
+    add({
+      severity: 'low',
+      code: 'no-buffers',
+      title: 'No BUFFERS data recorded',
+      detail: 'Run explain (analyze, buffers) to measure actual page work independent of cache warmth.',
+      nodeId: parsed.plan.id,
+      nodeTitle: parsed.plan.displayTitle,
+      metric: 'Missing BUFFERS',
+    });
+  }
+
   // Plan-level JIT overhead check
   const jitTotal = parsed.jit?.timing?.totalMs ?? 0;
   if (jitTotal > 0 && parsed.effectiveTotalTimeMs > 0) {
@@ -216,4 +230,33 @@ export function diagnosePlan(parsed: ParsedExplain): Diagnostic[] {
 
   out.sort((a, b) => SEV_WEIGHT[a.severity] - SEV_WEIGHT[b.severity]);
   return out;
+}
+
+function isParsedExplain(v: unknown): v is ParsedExplain {
+  return (
+    v !== null &&
+    typeof v === 'object' &&
+    'plan' in v &&
+    'hotPathIds' in v &&
+    'nodeCount' in v
+  );
+}
+
+export function analyzePlan(planInput: string | unknown): PlanAnalysis {
+  const parsed = isParsedExplain(planInput) ? planInput : parsePlan(planInput);
+  const diagnostics = diagnosePlan(parsed);
+  const b = parsed.plan.buffers;
+  const sharedDenom = b.shared.hit + b.shared.read;
+  const bufferHitPercent = sharedDenom > 0 ? (b.shared.hit / sharedDenom) * 100 : null;
+  return {
+    parsed,
+    diagnostics,
+    exclusiveTimeMs: parsed.effectiveTotalTimeMs,
+    exclusiveIoMs: parsed.effectiveTotalIoMs,
+    exclusiveCpuMs: parsed.effectiveTotalCpuMs,
+    totalBufferBlocks: sumBufferBlocks(b),
+    bufferHitPercent,
+    byRelation: parsed.byRelation,
+    byNodeType: parsed.byNodeType,
+  };
 }

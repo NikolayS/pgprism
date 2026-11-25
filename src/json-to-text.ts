@@ -377,6 +377,10 @@ export function parsedToText(parsed: ParsedExplain, options: JsonToTextOptions =
   renderNodeLines(parsed.plan, '', 0, opts, lines);
 
   if (opts.includeFooter) {
+    if (parsed.settings && Object.keys(parsed.settings).length > 0) {
+      const pairs = Object.entries(parsed.settings).map(([k, v]) => `${k} = '${v}'`);
+      lines.push(`Settings: ${pairs.join(', ')}`);
+    }
     if (parsed.queryIdentifier) {
       lines.push(`Query Identifier: ${parsed.queryIdentifier}`);
     }
@@ -419,10 +423,6 @@ export function parsedToText(parsed: ParsedExplain, options: JsonToTextOptions =
         const sio = formatIoSections(s.ioTimings);
         if (sio) lines.push(`  I/O Timings: ${sio}`);
       }
-    }
-    if (parsed.settings && Object.keys(parsed.settings).length > 0) {
-      const pairs = Object.entries(parsed.settings).map(([k, v]) => `${k} = '${v}'`);
-      lines.push(`Settings: ${pairs.join(', ')}`);
     }
     if (parsed.executionTimeMs !== undefined) {
       lines.push(`Execution Time: ${parsed.executionTimeMs.toFixed(3)} ms`);

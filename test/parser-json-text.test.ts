@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parsePlan } from '../src/parser';
+import { WAVE1A_SAMPLE } from './wave1a-fixture';
 
 const WAVE1A_SUMMARY = '/Users/nik/tmp/forge-tradeverifyd-w0/cases/tradeverifyd-search-pg17-01/runs/wave1a_61m/wave1a_summary.json';
 
@@ -404,15 +405,22 @@ test('PG 19 JSON & TEXT: Replaces, WAL FPI Bytes, Memoize Estimates, EXPLAIN (IO
 });
 
 test('Real Wave 1a explains from wave1a_summary.json parse cleanly', () => {
-  const summary = JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8'));
-  for (const cat of ['exact', 'typo', 'multi-word']) {
-    const entry = summary.explains[cat];
-    const p2 = parsePlan(entry.stage2_pattern_explain);
-    assert.equal(p2.plan.nodeType, 'Limit');
-    assert.equal(p2.queryIdentifier, '-8378418432840199008');
-    assert.ok(p2.executionTimeMs && p2.executionTimeMs > 0);
+  const plans = existsSync(WAVE1A_SUMMARY)
+    ? (() => {
+        const summary = JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8'));
+        for (const cat of ['exact', 'typo', 'multi-word']) {
+          const entry = summary.explains[cat];
+          const p2 = parsePlan(entry.stage2_pattern_explain);
+          assert.equal(p2.plan.nodeType, 'Limit');
+          assert.equal(p2.queryIdentifier, '-8378418432840199008');
+          assert.ok(p2.executionTimeMs && p2.executionTimeMs > 0);
+        }
+        return ['exact', 'typo', 'multi-word'].map((c) => summary.explains[c].stage3a_v6_2k_explain);
+      })()
+    : [WAVE1A_SAMPLE];
 
-    const p3 = parsePlan(entry.stage3a_v6_2k_explain);
+  for (const raw of plans) {
+    const p3 = parsePlan(raw);
     assert.equal(p3.plan.nodeType, 'Bitmap Heap Scan');
     assert.ok(p3.plan.plans.some((c) => c.subplanName === 'CTE forms'));
     assert.ok(p3.plan.plans.some((c) => c.subplanName === 'SubPlan 2'));

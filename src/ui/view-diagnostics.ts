@@ -7,7 +7,7 @@ export function renderDiagnosticsStrip(
   onToggleExpand: () => void,
   onJumpNode: (nodeId: string) => void
 ): HTMLElement {
-  const root = h('div', { className: 'pgs-diag' });
+  const root = h('div', { className: 'pgp-diag' });
 
   const high = diagnostics.filter((d) => d.severity === 'high').length;
   const med = diagnostics.filter((d) => d.severity === 'med').length;
@@ -16,22 +16,22 @@ export function renderDiagnosticsStrip(
   const summaryParts: Array<Node | string> = [
     h('span', null, diagnostics.length === 0 ? 'Diagnostics: no issues flagged' : `Diagnostics: ${diagnostics.length} ${diagnostics.length === 1 ? 'finding' : 'findings'}`),
   ];
-  if (high > 0) summaryParts.push(h('span', { className: 'pgs-sev pgs-sev-high' }, `${high} high`));
-  if (med > 0) summaryParts.push(h('span', { className: 'pgs-sev pgs-sev-med' }, `${med} medium`));
-  if (low > 0) summaryParts.push(h('span', { className: 'pgs-sev pgs-sev-low' }, `${low} low`));
+  if (high > 0) summaryParts.push(h('span', { className: 'pgp-sev pgp-sev-high' }, `${high} high`));
+  if (med > 0) summaryParts.push(h('span', { className: 'pgp-sev pgp-sev-med' }, `${med} medium`));
+  if (low > 0) summaryParts.push(h('span', { className: 'pgp-sev pgp-sev-low' }, `${low} low`));
   if (!expanded && diagnostics.length > 0) {
-    summaryParts.push(h('span', { className: 'pgs-diag-preview' }, diagnostics[0]!.title));
+    summaryParts.push(h('span', { className: 'pgp-diag-preview' }, diagnostics[0]!.title));
   }
 
   const head = h(
     'div',
     {
-      className: 'pgs-diag-head',
+      className: 'pgp-diag-head',
       role: 'button',
       tabindex: '0',
       'aria-expanded': String(expanded),
     },
-    h('div', { className: 'pgs-diag-summary' }, ...summaryParts),
+    h('div', { className: 'pgp-diag-summary' }, ...summaryParts),
     diagnostics.length > 0
       ? h('span', null, expanded ? 'Hide' : 'Show')
       : null
@@ -49,27 +49,27 @@ export function renderDiagnosticsStrip(
   root.appendChild(head);
 
   if (expanded && diagnostics.length > 0) {
-    const list = h('div', { className: 'pgs-diag-list' });
+    const list = h('div', { className: 'pgp-diag-list' });
     for (const d of diagnostics) {
       const sevCls =
-        d.severity === 'high' ? 'pgs-sev-high' : d.severity === 'med' ? 'pgs-sev-med' : 'pgs-sev-low';
+        d.severity === 'high' ? 'pgp-sev-high' : d.severity === 'med' ? 'pgp-sev-med' : 'pgp-sev-low';
       const sevLbl = d.severity === 'high' ? 'High' : d.severity === 'med' ? 'Med' : 'Low';
-      const jumpBtn = h('button', { type: 'button', className: 'pgs-btn pgs-btn-sm' }, d.nodeTitle);
+      const jumpBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm' }, d.nodeTitle);
       jumpBtn.addEventListener('click', () => onJumpNode(d.nodeId));
 
       list.appendChild(
         h(
           'div',
-          { className: 'pgs-diag-row' },
+          { className: 'pgp-diag-row' },
           h(
             'div',
-            { className: 'pgs-diag-main' },
-            h('span', { className: `pgs-sev ${sevCls}` }, sevLbl),
+            { className: 'pgp-diag-main' },
+            h('span', { className: `pgp-sev ${sevCls}` }, sevLbl),
             h(
               'div',
-              { className: 'pgs-diag-txt' },
-              h('span', { className: 'pgs-diag-title' }, d.title),
-              h('span', { className: 'pgs-diag-detail' }, d.detail)
+              { className: 'pgp-diag-txt' },
+              h('span', { className: 'pgp-diag-title' }, d.title),
+              h('span', { className: 'pgp-diag-detail' }, d.detail)
             )
           ),
           jumpBtn

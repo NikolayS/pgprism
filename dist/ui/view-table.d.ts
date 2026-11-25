@@ -1,9 +1,11 @@
-import type { ParsedExplain } from '../types';
+import type { MetricMode, ParsedExplain } from '../types';
 export interface TableViewOpts {
     selectedId: string | null;
     collapsed: Set<string>;
+    metric: MetricMode;
     search: string;
     hotOnly: boolean;
+    hideUnused: boolean;
     onSelect: (id: string) => void;
     onToggleCollapse: (id: string) => void;
 }

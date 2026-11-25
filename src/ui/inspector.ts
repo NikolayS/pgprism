@@ -1,4 +1,5 @@
-import type { BufferStats, ParsedExplain, PlanNode } from '../types';
+import { formatNodeForLLM } from '../format-llm';
+import type { BufferStats, Diagnostic, ParsedExplain, PlanNode } from '../types';
 import {
   formatBlocks,
   formatBytes,
@@ -8,17 +9,17 @@ import {
   formatMs,
   sumBufferBlocks,
 } from '../units';
-import { h } from './dom';
+import { attachCopyAction, h } from './dom';
 
 function kvSection(title: string, rows: Array<[string, string | undefined | null]>): HTMLElement | null {
   const valid = rows.filter((r): r is [string, string] => r[1] !== undefined && r[1] !== null && r[1] !== '');
   if (valid.length === 0) return null;
-  const grid = h('div', { className: 'pgs-kv' });
+  const grid = h('div', { className: 'pgp-kv' });
   for (const [k, v] of valid) {
-    grid.appendChild(h('span', { className: 'pgs-k' }, k));
-    grid.appendChild(h('span', { className: 'pgs-v' }, v));
+    grid.appendChild(h('span', { className: 'pgp-k' }, k));
+    grid.appendChild(h('span', { className: 'pgp-v' }, v));
   }
-  return h('div', { className: 'pgs-insp-sec' }, h('div', { className: 'pgs-insp-sec-title' }, title), grid);
+  return h('div', { className: 'pgp-insp-sec' }, h('div', { className: 'pgp-insp-sec-title' }, title), grid);
 }
 
 function formatBufPair(blocks: number): string | undefined {
@@ -42,15 +43,65 @@ function bufferRows(label: string, b: BufferStats): Array<[string, string | unde
   return rows;
 }
 
+function findParent(root: PlanNode, targetId: string): PlanNode | null {
+  for (const c of root.plans) {
+    if (c.id === targetId) return root;
+    const nested = findParent(c, targetId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findReferencedSubplans(parsed: ParsedExplain, node: PlanNode): Array<{ label: string; nodeId: string }> {
+  const out: Array<{ label: string; nodeId: string }> = [];
+  const seen = new Set<string>();
+  const addRef = (label: string) => {
+    const id = parsed.subplanTargets[label];
+    if (id && id !== node.id && !seen.has(id)) {
+      seen.add(id);
+      out.push({ label, nodeId: id });
+    }
+  };
+  if (node.cteName && node.nodeType === 'CTE Scan') {
+    addRef(`CTE ${node.cteName}`);
+  }
+  const fields = [
+    node.filter,
+    node.indexCond,
+    node.hashCond,
+    node.mergeCond,
+    node.recheckCond,
+    node.joinFilter,
+    node.oneTimeFilter,
+    node.runCondition,
+    node.output?.join(' '),
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const re = /\b((?:InitPlan|SubPlan)\s+\d+)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fields)) !== null) {
+    addRef(m[1]!);
+  }
+  return out;
+}
+
 export function renderInspector(
   parsed: ParsedExplain,
   node: PlanNode,
   onClose: () => void,
-  onSelectNode: (id: string) => void
+  onSelectNode: (id: string) => void,
+  diagnostics: Diagnostic[] = []
 ): HTMLElement {
-  const wrap = h('aside', { className: 'pgs-inspector', 'aria-label': 'Node inspector' });
+  const wrap = h('aside', { className: 'pgp-inspector', 'aria-label': 'Node inspector' });
 
-  const closeBtn = h('button', { type: 'button', className: 'pgs-btn pgs-btn-sm', title: 'Close inspector' }, 'Close');
+  const copyNodeBtn = h(
+    'button',
+    { type: 'button', className: 'pgp-btn pgp-btn-sm', title: 'Copy node Markdown summary for coding agents' },
+    'Copy node'
+  );
+  attachCopyAction(copyNodeBtn, () => formatNodeForLLM(parsed, node, diagnostics), 'Copy node');
+  const closeBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm', title: 'Close inspector' }, 'Close');
   closeBtn.addEventListener('click', onClose);
 
   const subBits: string[] = [node.nodeType];
@@ -61,23 +112,32 @@ export function renderInspector(
   wrap.appendChild(
     h(
       'div',
-      { className: 'pgs-insp-head' },
+      { className: 'pgp-insp-head' },
       h(
         'div',
         null,
-        h('div', { className: 'pgs-insp-title' }, node.displayTitle),
-        h('div', { className: 'pgs-insp-sub' }, subBits.join(' / '))
+        h('div', { className: 'pgp-insp-title' }, node.displayTitle),
+        h('div', { className: 'pgp-insp-sub' }, subBits.join(' / '))
       ),
-      closeBtn
+      h('div', { className: 'pgp-btn-group' }, copyNodeBtn, closeBtn)
     )
   );
 
   // Timing & Cost
+  const hasIoSplit = parsed.hasTiming && parsed.effectiveTotalIoMs > 0;
   const timingSec = kvSection('Timing and cost', [
     ['Exclusive time', parsed.hasTiming ? `${formatMs(node.exclusiveTimeMs)} (${node.pctExclusiveTime.toFixed(1)}%)` : undefined],
+    ['CPU* (self, est.)', hasIoSplit ? formatMs(node.exclusiveCpuMs) : undefined],
+    ['I/O (self)', hasIoSplit ? formatMs(node.exclusiveIoMs) : undefined],
     ['Inclusive time', parsed.hasTiming ? `${formatMs(node.inclusiveTimeMs)} (${node.pctExecutionTime.toFixed(1)}%)` : undefined],
     ['Per loop', node.actualTotalTime !== undefined ? `${formatMs(node.actualStartupTime)} .. ${formatMs(node.actualTotalTime)}` : undefined],
-    ['Loops', node.actualLoops !== undefined ? formatCount(node.actualLoops) : undefined],
+    [
+      'Loops × avg',
+      node.actualLoops !== undefined && node.actualLoops > 1 && node.actualTotalTime !== undefined
+        ? `${formatCount(node.actualLoops)} × ${formatMs(node.actualTotalTime)}`
+        : undefined,
+    ],
+    ['Loops', node.actualLoops !== undefined && (node.actualLoops <= 1 || node.actualTotalTime === undefined) ? formatCount(node.actualLoops) : undefined],
     ['Cost (startup..total)', node.totalCost !== undefined ? `${(node.startupCost ?? 0).toFixed(2)} .. ${node.totalCost.toFixed(2)}` : undefined],
     ['Exclusive cost', parsed.hasCosts ? node.exclusiveCost.toFixed(2) : undefined],
     ['Row width', node.planWidth !== undefined ? `${node.planWidth} B` : undefined],
@@ -103,10 +163,13 @@ export function renderInspector(
   if (rowsSec) wrap.appendChild(rowsSec);
 
   // Buffers & I/O
+  const exShared = node.exclusiveBuffers.shared.hit + node.exclusiveBuffers.shared.read;
+  const selfHitPct = exShared > 0 ? `${((node.exclusiveBuffers.shared.hit / exShared) * 100).toFixed(1)}%` : undefined;
   const totalShared = node.buffers.shared.hit + node.buffers.shared.read;
   const hitPct = totalShared > 0 ? `${((node.buffers.shared.hit / totalShared) * 100).toFixed(1)}%` : undefined;
   const bufRows: Array<[string, string | undefined]> = [
-    ['Shared hit ratio', hitPct],
+    ['Self hit ratio', selfHitPct],
+    ['Subtree hit ratio', node.plans.length > 0 && totalShared !== exShared ? hitPct : undefined],
     ...bufferRows('Self', node.exclusiveBuffers),
   ];
   if (node.plans.length > 0 && sumBufferBlocks(node.buffers) !== sumBufferBlocks(node.exclusiveBuffers)) {
@@ -187,7 +250,7 @@ export function renderInspector(
   if (node.workers && node.workers.length > 0) {
     const tbl = h(
       'table',
-      { className: 'pgs-worker-tbl' },
+      { className: 'pgp-worker-tbl' },
       h(
         'thead',
         null,
@@ -217,7 +280,7 @@ export function renderInspector(
       )
     );
     wrap.appendChild(
-      h('div', { className: 'pgs-insp-sec' }, h('div', { className: 'pgs-insp-sec-title' }, 'Parallel workers'), tbl)
+      h('div', { className: 'pgp-insp-sec' }, h('div', { className: 'pgp-insp-sec-title' }, 'Parallel workers'), tbl)
     );
   }
 
@@ -242,20 +305,32 @@ export function renderInspector(
   ].filter((x): x is [string, string] => Boolean(x[1]));
 
   if (exprPairs.length > 0) {
-    const sec = h('div', { className: 'pgs-insp-sec' }, h('div', { className: 'pgs-insp-sec-title' }, 'Keys and conditions'));
+    const sec = h('div', { className: 'pgp-insp-sec' }, h('div', { className: 'pgp-insp-sec-title' }, 'Keys and conditions'));
     for (const [k, v] of exprPairs) {
-      sec.appendChild(h('div', { className: 'pgs-k', style: { marginTop: '5px' } }, k));
-      sec.appendChild(h('div', { className: 'pgs-expr' }, v));
+      sec.appendChild(h('div', { className: 'pgp-k', style: { marginTop: '5px' } }, k));
+      sec.appendChild(h('div', { className: 'pgp-expr' }, v));
     }
     wrap.appendChild(sec);
   }
 
-  // Children quick links
-  if (node.plans.length > 0) {
-    const sec = h('div', { className: 'pgs-insp-sec' }, h('div', { className: 'pgs-insp-sec-title' }, 'Child nodes'));
-    const list = h('div', { className: 'pgs-btn-group' });
+  // Parent / SubPlan / CTE navigation & Children quick links
+  const parent = findParent(parsed.plan, node.id);
+  const refs = findReferencedSubplans(parsed, node);
+  if (parent || refs.length > 0 || node.plans.length > 0) {
+    const sec = h('div', { className: 'pgp-insp-sec' }, h('div', { className: 'pgp-insp-sec-title' }, 'Plan links'));
+    const list = h('div', { className: 'pgp-btn-group' });
+    if (parent) {
+      const pBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm' }, `↑ ${parent.displayTitle}`);
+      pBtn.addEventListener('click', () => onSelectNode(parent.id));
+      list.appendChild(pBtn);
+    }
+    for (const r of refs) {
+      const rBtn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm' }, `-> ${r.label}`);
+      rBtn.addEventListener('click', () => onSelectNode(r.nodeId));
+      list.appendChild(rBtn);
+    }
     for (const ch of node.plans) {
-      const btn = h('button', { type: 'button', className: 'pgs-btn pgs-btn-sm' }, ch.displayTitle);
+      const btn = h('button', { type: 'button', className: 'pgp-btn pgp-btn-sm' }, ch.displayTitle);
       btn.addEventListener('click', () => onSelectNode(ch.id));
       list.appendChild(btn);
     }

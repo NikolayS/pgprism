@@ -1,5 +1,5 @@
 export type ViewMode = 'table' | 'tree' | 'flame' | 'text' | 'json';
-export type MetricMode = 'exclusiveTime' | 'inclusiveTime' | 'buffers' | 'ioTime' | 'rows' | 'cost';
+export type MetricMode = 'exclusiveTime' | 'inclusiveTime' | 'buffers' | 'diskReads' | 'ioTime' | 'rows' | 'cost';
 export type ThemeMode = 'dark' | 'light' | 'auto';
 export interface BufferGroup {
     hit: number;
@@ -112,6 +112,7 @@ export interface PlanNode {
     neverExecuted: boolean;
     inclusiveTimeMs: number;
     exclusiveTimeMs: number;
+    exclusiveCpuMs: number;
     pctExecutionTime: number;
     pctExclusiveTime: number;
     inclusiveCost: number;
@@ -124,6 +125,8 @@ export interface PlanNode {
     exclusiveBuffers: BufferStats;
     totalBufferBlocks: number;
     exclusiveBufferBlocks: number;
+    totalDiskBlocks: number;
+    exclusiveDiskBlocks: number;
     ioTimings?: IoTimingStats;
     exclusiveIoMs: number;
     wal?: WalStats;
@@ -240,6 +243,32 @@ export interface SerializationStats {
     buffers?: BufferStats;
     ioTimings?: IoTimingStats;
 }
+export interface RelationSummary {
+    name: string;
+    kind: 'table' | 'index' | 'cte';
+    nodeCount: number;
+    exclusiveTimeMs: number;
+    pctTime: number;
+    exclusiveIoMs: number;
+    exclusiveBufferBlocks: number;
+    sharedHit: number;
+    sharedRead: number;
+    tempBlocks: number;
+    hottestNodeId: string;
+    nodeIds: string[];
+}
+export interface NodeTypeSummary {
+    nodeType: string;
+    nodeCount: number;
+    exclusiveTimeMs: number;
+    pctTime: number;
+    exclusiveIoMs: number;
+    exclusiveBufferBlocks: number;
+    sharedHit: number;
+    sharedRead: number;
+    hottestNodeId: string;
+    nodeIds: string[];
+}
 export interface ParsedExplain {
     plan: PlanNode;
     planningTimeMs?: number;
@@ -247,15 +276,22 @@ export interface ParsedExplain {
     effectiveTotalTimeMs: number;
     effectiveTotalCost: number;
     effectiveTotalBufferBlocks: number;
+    effectiveTotalDiskBlocks: number;
     effectiveTotalIoMs: number;
+    effectiveTotalCpuMs: number;
     maxNodeExclusiveTimeMs: number;
     maxNodeInclusiveTimeMs: number;
     maxNodeBufferBlocks: number;
+    maxNodeDiskBlocks: number;
     maxNodeRows: number;
     maxNodeCost: number;
     maxNodeIoMs: number;
     hotPathIds: Set<string>;
     nodeCount: number;
+    neverExecutedCount: number;
+    byRelation: RelationSummary[];
+    byNodeType: NodeTypeSummary[];
+    subplanTargets: Record<string, string>;
     planning?: PlanningStats;
     triggers: TriggerInfo[];
     jit?: JitStats;
@@ -287,7 +323,7 @@ export interface Diagnostic {
 export interface RenderOptions {
     theme?: ThemeMode;
     view?: ViewMode;
-    metric?: MetricMode;
+    metric?: MetricMode | 'auto';
     showDiagnostics?: boolean;
     showHeader?: boolean;
     showToolbar?: boolean;
@@ -297,7 +333,35 @@ export interface RenderOptions {
     useShadow?: boolean;
     onSelectNode?: (node: PlanNode | null) => void;
 }
+export interface PlanAnalysis {
+    parsed: ParsedExplain;
+    diagnostics: Diagnostic[];
+    exclusiveTimeMs: number;
+    exclusiveIoMs: number;
+    exclusiveCpuMs: number;
+    totalBufferBlocks: number;
+    bufferHitPercent: number | null;
+    byRelation: RelationSummary[];
+    byNodeType: NodeTypeSummary[];
+}
+export interface AutoAttachOptions {
+    mode?: 'toggle' | 'replace' | 'below';
+    theme?: ThemeMode;
+    view?: ViewMode;
+    showDiagnostics?: boolean;
+    selector?: string;
+}
+export interface AutoAttachResult {
+    attached: number;
+    elements: HTMLElement[];
+    destroy: () => void;
+}
 export interface JsonToTextOptions {
     verbose?: boolean;
     includeFooter?: boolean;
+}
+export interface FormatForLLMOptions {
+    nodeId?: string;
+    includePlan?: boolean;
+    verbose?: boolean;
 }

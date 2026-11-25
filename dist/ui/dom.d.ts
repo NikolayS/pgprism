@@ -6,3 +6,4 @@ export interface DomProps {
 }
 export declare function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: DomProps | null, ...children: Array<Node | string | number | false | null | undefined>): HTMLElementTagNameMap[K];
 export declare function clearNode(el: Node): void;
+export declare function attachCopyAction(btn: HTMLButtonElement, getText: () => string, label?: string): void;

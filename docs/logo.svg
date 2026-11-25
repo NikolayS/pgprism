@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" role="img" aria-label="pgprism logo">
+  <!-- Incoming unsplit query beam -->
+  <line x1="6" y1="34" x2="22" y2="34" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
+  <!-- Internal refraction fan -->
+  <line x1="22" y1="34" x2="40" y2="27" stroke="#FF6112" stroke-width="1.75" stroke-opacity="0.75"/>
+  <line x1="22" y1="34" x2="42" y2="32" stroke="#73BF69" stroke-width="1.75" stroke-opacity="0.75"/>
+  <line x1="22" y1="34" x2="44" y2="37" stroke="#5794F2" stroke-width="1.75" stroke-opacity="0.75"/>
+  <line x1="22" y1="34" x2="46" y2="42" stroke="#F2495C" stroke-width="1.75" stroke-opacity="0.75"/>
+  <!-- Prism body (neutral slate stroke readable on dark & light backgrounds) -->
+  <polygon points="32,11 52,48 12,48" fill="#94A3B8" fill-opacity="0.10" stroke="#94A3B8" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- Displaced ASH spectrum rays exiting right face -->
+  <line x1="40.5" y1="26.5" x2="57" y2="22" stroke="#FF6112" stroke-width="2.75" stroke-linecap="round"/>
+  <line x1="43" y1="31.5" x2="57" y2="30" stroke="#73BF69" stroke-width="2.75" stroke-linecap="round"/>
+  <line x1="45.5" y1="36.5" x2="57" y2="38" stroke="#5794F2" stroke-width="2.75" stroke-linecap="round"/>
+  <line x1="48" y1="41.5" x2="57" y2="46" stroke="#F2495C" stroke-width="2.75" stroke-linecap="round"/>
+</svg>

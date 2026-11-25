@@ -5,6 +5,7 @@ export interface TreeViewOpts {
     metric: MetricMode;
     search: string;
     hotOnly: boolean;
+    hideUnused: boolean;
     onSelect: (id: string) => void;
     onToggleCollapse: (id: string) => void;
 }

@@ -1,6 +1,7 @@
 import { diagnosePlan } from '../diagnostics';
+import { formatForLLM } from '../format-llm';
 import { parsePlan } from '../parser';
-import { PGSCOPE_CSS } from '../styles';
+import { PGPRISM_CSS } from '../styles';
 import type {
   MetricMode,
   ParsedExplain,
@@ -16,8 +17,9 @@ import {
   formatMs,
   sumBufferBlocks,
 } from '../units';
-import { clearNode, h } from './dom';
+import { attachCopyAction, clearNode, h } from './dom';
 import { renderInspector } from './inspector';
+import { renderBreakdownPanel } from './view-breakdown';
 import { renderDiagnosticsStrip } from './view-diagnostics';
 import { renderFlameView } from './view-flame';
 import { renderTableView } from './view-table';
@@ -48,7 +50,7 @@ function mountStyles(target: Document | ShadowRoot, nonce?: string): void {
     try {
       if (!sharedSheet) {
         sharedSheet = new CSSStyleSheet();
-        sharedSheet.replaceSync(PGSCOPE_CSS);
+        sharedSheet.replaceSync(PGPRISM_CSS);
       }
       const existing = target.adoptedStyleSheets ?? [];
       if (!existing.includes(sharedSheet)) {
@@ -61,9 +63,9 @@ function mountStyles(target: Document | ShadowRoot, nonce?: string): void {
   }
 
   const styleEl = document.createElement('style');
-  styleEl.setAttribute('data-pgscope', '1');
+  styleEl.setAttribute('data-pgprism', '1');
   if (nonce) styleEl.setAttribute('nonce', nonce);
-  styleEl.textContent = PGSCOPE_CSS;
+  styleEl.textContent = PGPRISM_CSS;
   if (target instanceof Document) {
     target.head.appendChild(styleEl);
   } else {
@@ -100,16 +102,18 @@ function collectParentIds(node: PlanNode, acc: Set<string>): void {
 function renderSummary(
   parsed: ParsedExplain,
   theme: 'dark' | 'light',
+  breakdownExpanded: boolean,
+  onToggleBreakdown: () => void,
   onToggleTheme: () => void
 ): HTMLElement {
-  const stats = h('div', { className: 'pgs-stats' });
-  const addStat = (label: string, val: string, sub?: string) => {
+  const stats = h('div', { className: 'pgp-stats' });
+  const addStat = (label: string, val: string, sub?: string, tip?: string) => {
     stats.appendChild(
       h(
         'div',
-        { className: 'pgs-stat' },
-        h('span', { className: 'pgs-stat-lbl' }, label),
-        h('span', { className: 'pgs-stat-val' }, val, sub ? h('span', { className: 'pgs-stat-sub' }, sub) : null)
+        { className: 'pgp-stat', title: tip },
+        h('span', { className: 'pgp-stat-lbl' }, label),
+        h('span', { className: 'pgp-stat-val' }, val, sub ? h('span', { className: 'pgp-stat-sub' }, sub) : null)
       )
     );
   };
@@ -120,6 +124,23 @@ function renderSummary(
     addStat('Total time', formatMs(parsed.effectiveTotalTimeMs));
   } else if (parsed.hasCosts) {
     addStat('Total cost', parsed.effectiveTotalCost.toFixed(2));
+  }
+
+  if (parsed.effectiveTotalIoMs > 0) {
+    const r = parsed.plan.ioTimings?.totalReadMs ?? 0;
+    const w = parsed.plan.ioTimings?.totalWriteMs ?? 0;
+    if (parsed.hasTiming && parsed.effectiveTotalTimeMs > 0) {
+      const ioPct = Math.min(100, (parsed.effectiveTotalIoMs / parsed.effectiveTotalTimeMs) * 100);
+      const cpuPct = Math.max(0, 100 - ioPct);
+      addStat(
+        'CPU* / I/O split',
+        `${cpuPct.toFixed(0)}% / ${ioPct.toFixed(0)}%`,
+        `${formatMs(parsed.effectiveTotalCpuMs)} · ${formatMs(parsed.effectiveTotalIoMs)}`,
+        `CPU* = execution minus tracked I/O time (read ${formatMs(r)}, write ${formatMs(w)})`
+      );
+    } else {
+      addStat('I/O time', formatMs(parsed.effectiveTotalIoMs), `r ${formatMs(r)} / w ${formatMs(w)}`);
+    }
   }
 
   if (parsed.planningTimeMs !== undefined) {
@@ -140,29 +161,38 @@ function renderSummary(
     addStat('Buffers', formatBlocks(totalIoBlks), subBits || undefined);
   }
 
-  if (parsed.effectiveTotalIoMs > 0) {
-    const r = parsed.plan.ioTimings?.totalReadMs ?? 0;
-    const w = parsed.plan.ioTimings?.totalWriteMs ?? 0;
-    addStat('I/O time', formatMs(parsed.effectiveTotalIoMs), `r ${formatMs(r)} / w ${formatMs(w)}`);
-  }
-
   const rowVal = parsed.isAnalyze
     ? formatCompactCount(parsed.plan.totalActualRows)
     : formatCompactCount(parsed.plan.totalPlanRows);
-  addStat(parsed.isAnalyze ? 'Rows' : 'Est. rows', rowVal, `${parsed.nodeCount} nodes`);
+  const nodeSub =
+    parsed.neverExecutedCount > 0
+      ? `${parsed.nodeCount} nodes (${parsed.neverExecutedCount} unused)`
+      : `${parsed.nodeCount} nodes`;
+  addStat(parsed.isAnalyze ? 'Rows' : 'Est. rows', rowVal, nodeSub);
+
+  const bdBtn = h(
+    'button',
+    {
+      type: 'button',
+      className: `pgp-btn pgp-btn-sm ${breakdownExpanded ? 'active' : ''}`,
+      'aria-expanded': String(breakdownExpanded),
+    },
+    'Breakdown'
+  );
+  bdBtn.addEventListener('click', onToggleBreakdown);
 
   const themeBtn = h(
     'button',
-    { type: 'button', className: 'pgs-btn pgs-btn-sm' },
+    { type: 'button', className: 'pgp-btn pgp-btn-sm' },
     theme === 'dark' ? 'Light mode' : 'Dark mode'
   );
   themeBtn.addEventListener('click', onToggleTheme);
 
   return h(
     'div',
-    { className: 'pgs-summary' },
+    { className: 'pgp-summary' },
     stats,
-    h('div', { className: 'pgs-summary-right' }, themeBtn)
+    h('div', { className: 'pgp-summary-right' }, bdBtn, themeBtn)
   );
 }
 
@@ -170,14 +200,14 @@ function renderMetaStrip(parsed: ParsedExplain): HTMLElement | null {
   const items: HTMLElement[] = [];
 
   if (parsed.queryIdentifier) {
-    items.push(h('span', { className: 'pgs-meta-item' }, 'Query ID: ', h('code', null, parsed.queryIdentifier)));
+    items.push(h('span', { className: 'pgp-meta-item' }, 'Query ID: ', h('code', null, parsed.queryIdentifier)));
   }
   if (parsed.jit) {
     const jt = parsed.jit.timing?.totalMs;
     items.push(
       h(
         'span',
-        { className: 'pgs-meta-item' },
+        { className: 'pgp-meta-item' },
         'JIT: ',
         h('code', null, `${parsed.jit.functions} fn${jt !== undefined ? ` (${formatMs(jt)})` : ''}`)
       )
@@ -188,7 +218,7 @@ function renderMetaStrip(parsed: ParsedExplain): HTMLElement | null {
     items.push(
       h(
         'span',
-        { className: 'pgs-meta-item' },
+        { className: 'pgp-meta-item' },
         'Serialize: ',
         h('code', null, `${formatKbAsIec(s.outputKb)} ${s.format}${s.timeMs !== undefined ? ` (${formatMs(s.timeMs)})` : ''}`)
       )
@@ -199,7 +229,7 @@ function renderMetaStrip(parsed: ParsedExplain): HTMLElement | null {
     items.push(
       h(
         'span',
-        { className: 'pgs-meta-item' },
+        { className: 'pgp-meta-item' },
         'Triggers: ',
         h('code', null, `${parsed.triggers.length} (${formatMs(totalTrigMs)})`)
       )
@@ -212,7 +242,7 @@ function renderMetaStrip(parsed: ParsedExplain): HTMLElement | null {
     items.push(
       h(
         'span',
-        { className: 'pgs-meta-item', title: entries.map(([k, v]) => `${k} = '${v}'`).join('\n') },
+        { className: 'pgp-meta-item', title: entries.map(([k, v]) => `${k} = '${v}'`).join('\n') },
         'Settings: ',
         h('code', null, preview + more)
       )
@@ -220,7 +250,14 @@ function renderMetaStrip(parsed: ParsedExplain): HTMLElement | null {
   }
 
   if (items.length === 0) return null;
-  return h('div', { className: 'pgs-meta-strip' }, ...items);
+  return h('div', { className: 'pgp-meta-strip' }, ...items);
+}
+
+function resolveMetric(parsed: ParsedExplain, pref?: MetricMode | 'auto'): MetricMode {
+  if (pref && pref !== 'auto') return pref;
+  if (parsed.hasBuffers) return 'buffers';
+  if (parsed.hasTiming) return 'exclusiveTime';
+  return 'cost';
 }
 
 export function renderPlan(
@@ -248,15 +285,17 @@ export function renderPlan(
   let theme: 'dark' | 'light' = resolveInitialTheme(container, options.theme);
   let explicitTheme = options.theme === 'dark' || options.theme === 'light';
   let view: ViewMode = options.view ?? 'table';
-  let metric: MetricMode = options.metric ?? (parsed.hasTiming ? 'exclusiveTime' : 'cost');
+  let metric: MetricMode = resolveMetric(parsed, options.metric);
   let selectedId: string | null = null;
   let diagExpanded = false;
+  let breakdownExpanded = false;
   let hotOnly = false;
+  let hideUnused = false;
   let search = '';
   let verboseOutput = true;
   const collapsed = new Set<string>();
 
-  const rootEl = h('div', { className: 'pgs-root', 'data-theme': theme });
+  const rootEl = h('div', { className: 'pgp-root', 'data-theme': theme });
   clearNode(mountPoint);
   mountPoint.appendChild(rootEl);
 
@@ -285,6 +324,8 @@ export function renderPlan(
 
   const jumpToNode = (id: string) => {
     if (view === 'text' || view === 'json') view = 'table';
+    const targetNode = findNode(parsed.plan, id);
+    if (targetNode?.neverExecuted) hideUnused = false;
     // Ensure ancestors are expanded
     const expandPath = (n: PlanNode): boolean => {
       if (n.id === id) return true;
@@ -310,14 +351,27 @@ export function renderPlan(
 
     if (currentOpts.showHeader !== false) {
       rootEl.appendChild(
-        renderSummary(parsed, theme, () => {
-          explicitTheme = true;
-          theme = theme === 'dark' ? 'light' : 'dark';
-          paint();
-        })
+        renderSummary(
+          parsed,
+          theme,
+          breakdownExpanded,
+          () => {
+            breakdownExpanded = !breakdownExpanded;
+            paint();
+          },
+          () => {
+            explicitTheme = true;
+            theme = theme === 'dark' ? 'light' : 'dark';
+            paint();
+          }
+        )
       );
       const meta = renderMetaStrip(parsed);
       if (meta) rootEl.appendChild(meta);
+    }
+
+    if (breakdownExpanded) {
+      rootEl.appendChild(renderBreakdownPanel(parsed, jumpToNode));
     }
 
     if (currentOpts.showDiagnostics !== false) {
@@ -344,7 +398,7 @@ export function renderPlan(
       ];
       const viewBtns = h(
         'div',
-        { className: 'pgs-btn-group', role: 'tablist' },
+        { className: 'pgp-btn-group', role: 'tablist' },
         ...views.map(([mode, label]) => {
           const btn = h(
             'button',
@@ -352,7 +406,7 @@ export function renderPlan(
               type: 'button',
               role: 'tab',
               'aria-selected': String(view === mode),
-              className: `pgs-btn ${view === mode ? 'active' : ''}`,
+              className: `pgp-btn ${view === mode ? 'active' : ''}`,
             },
             label
           );
@@ -364,34 +418,55 @@ export function renderPlan(
         })
       );
 
-      const rightTools = h('div', { className: 'pgs-btn-group' });
+      const rightTools = h('div', { className: 'pgp-btn-group' });
 
-      if (view === 'tree' || view === 'flame') {
-        const metricSel = h('select', { className: 'pgs-select', 'aria-label': 'Metric' });
+      if (view === 'table' || view === 'tree' || view === 'flame') {
         const metricOpts: Array<[MetricMode, string]> = [
-          ['exclusiveTime', 'Exclusive time'],
+          ['exclusiveTime', view === 'flame' ? 'Time' : 'Exclusive time'],
           ['inclusiveTime', 'Inclusive time'],
-          ['buffers', 'Buffers'],
+          ['buffers', 'Buffers (all)'],
+          ['diskReads', 'Disk reads'],
           ['ioTime', 'I/O time'],
           ['rows', 'Rows'],
           ['cost', 'Cost'],
         ];
-        for (const [mv, ml] of metricOpts) {
-          const o = h('option', { value: mv }, ml);
-          if (mv === metric) o.selected = true;
-          metricSel.appendChild(o);
+        if (view === 'flame') {
+          const flameQuick: Array<[MetricMode, string]> = [
+            ['exclusiveTime', 'Time'],
+            ['buffers', 'Buffers'],
+            ['diskReads', 'Disk reads'],
+            ['ioTime', 'I/O time'],
+            ['rows', 'Rows'],
+            ['cost', 'Cost'],
+          ];
+          const grp = h('div', { className: 'pgp-btn-group', role: 'group', 'aria-label': 'Flame metric' });
+          for (const [mv, ml] of flameQuick) {
+            const active = mv === metric || (mv === 'exclusiveTime' && metric === 'inclusiveTime');
+            const b = h('button', { type: 'button', className: `pgp-btn pgp-btn-sm ${active ? 'active' : ''}` }, ml);
+            b.addEventListener('click', () => {
+              metric = mv;
+              paint();
+            });
+            grp.appendChild(b);
+          }
+          rightTools.appendChild(grp);
+        } else {
+          const metricSel = h('select', { className: 'pgp-select', 'aria-label': 'Metric' });
+          for (const [mv, ml] of metricOpts) {
+            const o = h('option', { value: mv }, ml);
+            if (mv === metric) o.selected = true;
+            metricSel.appendChild(o);
+          }
+          metricSel.addEventListener('change', () => {
+            metric = metricSel.value as MetricMode;
+            paint();
+          });
+          rightTools.appendChild(metricSel);
         }
-        metricSel.addEventListener('change', () => {
-          metric = metricSel.value as MetricMode;
-          paint();
-        });
-        rightTools.appendChild(metricSel);
-      }
 
-      if (view === 'table' || view === 'tree' || view === 'flame') {
         const hotBtn = h(
           'button',
-          { type: 'button', className: `pgs-btn ${hotOnly ? 'active' : ''}` },
+          { type: 'button', className: `pgp-btn ${hotOnly ? 'active' : ''}` },
           'Hot path'
         );
         hotBtn.addEventListener('click', () => {
@@ -400,10 +475,25 @@ export function renderPlan(
         });
         rightTools.appendChild(hotBtn);
 
+        if (parsed.neverExecutedCount > 0) {
+          const unusedBtn = h(
+            'button',
+            { type: 'button', className: `pgp-btn ${hideUnused ? 'active' : ''}` },
+            hideUnused
+              ? `Show unused (${parsed.neverExecutedCount})`
+              : `Hide unused (${parsed.neverExecutedCount})`
+          );
+          unusedBtn.addEventListener('click', () => {
+            hideUnused = !hideUnused;
+            paint();
+          });
+          rightTools.appendChild(unusedBtn);
+        }
+
         if (view === 'table' || view === 'tree') {
           const foldAllBtn = h(
             'button',
-            { type: 'button', className: 'pgs-btn' },
+            { type: 'button', className: 'pgp-btn' },
             collapsed.size > 0 ? 'Expand all' : 'Collapse all'
           );
           foldAllBtn.addEventListener('click', () => {
@@ -420,7 +510,7 @@ export function renderPlan(
 
         const searchInput = h('input', {
           type: 'search',
-          className: 'pgs-input',
+          className: 'pgp-input',
           placeholder: 'Filter nodes...',
           value: search,
           'aria-label': 'Filter nodes',
@@ -429,7 +519,7 @@ export function renderPlan(
           search = searchInput.value;
           const pos = searchInput.selectionStart ?? search.length;
           paint();
-          const re = rootEl.querySelector('.pgs-input') as HTMLInputElement | null;
+          const re = rootEl.querySelector('.pgp-input') as HTMLInputElement | null;
           if (re) {
             re.focus();
             re.setSelectionRange(pos, pos);
@@ -438,14 +528,22 @@ export function renderPlan(
         rightTools.appendChild(searchInput);
       }
 
-      rootEl.appendChild(h('div', { className: 'pgs-toolbar' }, viewBtns, rightTools));
+      const copyLlmBtn = h(
+        'button',
+        { type: 'button', className: 'pgp-btn', title: 'Copy Markdown summary for coding agents' },
+        'Copy for LLM'
+      );
+      attachCopyAction(copyLlmBtn, () => formatForLLM(parsed), 'Copy for LLM');
+      rightTools.appendChild(copyLlmBtn);
+
+      rootEl.appendChild(h('div', { className: 'pgp-toolbar' }, viewBtns, rightTools));
     }
 
     const selectedNode = findNode(parsed.plan, selectedId);
     const showInsp = Boolean(selectedNode) && view !== 'text' && view !== 'json';
-    const workspace = h('div', { className: `pgs-workspace ${showInsp ? 'with-insp' : ''}` });
+    const workspace = h('div', { className: `pgp-workspace ${showInsp ? 'with-insp' : ''}` });
     const main = h('div', {
-      className: 'pgs-main',
+      className: 'pgp-main',
       style: currentOpts.maxHeight ? { maxHeight: currentOpts.maxHeight } : undefined,
     });
 
@@ -454,8 +552,10 @@ export function renderPlan(
         renderTableView(parsed, {
           selectedId,
           collapsed,
+          metric,
           search,
           hotOnly,
+          hideUnused,
           onSelect: (id) => selectNode(id === selectedId ? null : id),
           onToggleCollapse: (id) => {
             if (collapsed.has(id)) collapsed.delete(id);
@@ -472,6 +572,7 @@ export function renderPlan(
           metric,
           search,
           hotOnly,
+          hideUnused,
           onSelect: (id) => selectNode(id === selectedId ? null : id),
           onToggleCollapse: (id) => {
             if (collapsed.has(id)) collapsed.delete(id);
@@ -487,6 +588,7 @@ export function renderPlan(
           metric,
           search,
           hotOnly,
+          hideUnused,
           onSelect: (id) => selectNode(id === selectedId ? null : id),
         })
       );
@@ -502,7 +604,7 @@ export function renderPlan(
     workspace.appendChild(main);
     if (showInsp && selectedNode) {
       workspace.appendChild(
-        renderInspector(parsed, selectedNode, () => selectNode(null), jumpToNode)
+        renderInspector(parsed, selectedNode, () => selectNode(null), jumpToNode, diagnostics)
       );
     }
     rootEl.appendChild(workspace);
@@ -520,15 +622,17 @@ export function renderPlan(
       if (nextOptions) {
         currentOpts = { ...currentOpts, ...nextOptions };
         if (nextOptions.view) view = nextOptions.view;
-        if (nextOptions.metric) metric = nextOptions.metric;
         if (nextOptions.theme === 'dark' || nextOptions.theme === 'light') {
           explicitTheme = true;
           theme = nextOptions.theme;
         }
       }
+      metric = resolveMetric(parsed, nextOptions?.metric ?? currentOpts.metric);
       collapsed.clear();
       selectedId = null;
       diagExpanded = false;
+      breakdownExpanded = false;
+      hideUnused = false;
       paint();
     },
     selectNode,

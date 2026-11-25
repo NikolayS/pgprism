@@ -1,19 +1,24 @@
 {
-  "name": "pgscope",
-  "version": "0.1.0",
+  "name": "pgprism",
+  "version": "0.1.0-alpha.1",
   "description": "Tiny, zero-dependency TypeScript visualizer and JSON-to-text translator for PostgreSQL EXPLAIN plans (PG 15-19)",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/pgscope.cjs",
-  "module": "./dist/pgscope.js",
+  "main": "./dist/pgprism.cjs",
+  "module": "./dist/pgprism.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/pgscope.js",
-      "require": "./dist/pgscope.cjs"
+      "import": "./dist/pgprism.js",
+      "require": "./dist/pgprism.cjs"
     },
-    "./styles.css": "./dist/pgscope.css"
+    "./json-to-text": {
+      "types": "./dist/json-to-text.d.ts",
+      "import": "./dist/json-to-text.js",
+      "require": "./dist/json-to-text.cjs"
+    },
+    "./styles.css": "./dist/pgprism.css"
   },
   "files": [
     "dist",
@@ -24,6 +29,7 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
+    "test:psql": "node tests/psql-regression.mjs",
     "check": "npm run typecheck && npm run build && npm test"
   },
   "keywords": [
@@ -38,7 +44,7 @@
   "author": "Nikolay Samokhvalov",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NikolayS/pgscope.git"
+    "url": "https://github.com/NikolayS/pgprism.git"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

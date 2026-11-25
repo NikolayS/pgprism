@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { diagnosePlan } from '../src/diagnostics';
 import { parsePlan } from '../src/parser';
 import { blocksToBytes, formatBlocks, formatBytes, formatFactor } from '../src/units';
+import { WAVE1A_SAMPLE } from './wave1a-fixture';
 
 const WAVE1A_SUMMARY = '/Users/nik/tmp/forge-tradeverifyd-w0/cases/tradeverifyd-search-pg17-01/runs/wave1a_61m/wave1a_summary.json';
 
@@ -19,8 +20,10 @@ test('IEC binary units and 8 KiB block formatting', () => {
 });
 
 test('Diagnostics engine flags spills, lossy bitmaps, disabled nodes, misestimates, and Wave 1a hotspots', () => {
-  const summary = JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8'));
-  const p = parsePlan(summary.explains.exact.stage3a_v6_2k_explain);
+  const wavePlan = existsSync(WAVE1A_SUMMARY)
+    ? JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8')).explains.exact.stage3a_v6_2k_explain
+    : WAVE1A_SAMPLE;
+  const p = parsePlan(wavePlan);
   const diags = diagnosePlan(p);
   assert.ok(diags.some((d) => d.code === 'row-misestimate' && d.severity === 'high'));
   assert.ok(diags.some((d) => d.code === 'filter-discard' && d.severity === 'high'));
@@ -102,4 +105,25 @@ test('Diagnostics engine flags spills, lossy bitmaps, disabled nodes, misestimat
   assert.ok(codes.has('heap-fetches'));
   assert.ok(codes.has('jit-overhead'));
   assert.ok(codes.has('row-misestimate'));
+
+  const noBufPlan = [
+    {
+      Plan: {
+        'Node Type': 'Seq Scan',
+        'Parallel Aware': false,
+        'Relation Name': 'users',
+        Alias: 'u',
+        'Startup Cost': 0,
+        'Total Cost': 10,
+        'Plan Rows': 100,
+        'Plan Width': 8,
+        'Actual Startup Time': 0.01,
+        'Actual Total Time': 0.5,
+        'Actual Rows': 100,
+        'Actual Loops': 1,
+      },
+      'Execution Time': 0.6,
+    },
+  ];
+  assert.ok(diagnosePlan(parsePlan(noBufPlan)).some((d) => d.code === 'no-buffers'));
 });

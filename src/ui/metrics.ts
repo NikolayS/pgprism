@@ -112,6 +112,20 @@ export function getMetricSample(
         label: node.totalBufferBlocks > 0 ? formatBlocks(node.totalBufferBlocks) : '0 B',
       };
     }
+    case 'diskReads': {
+      const denom = parsed.effectiveTotalDiskBlocks || parsed.maxNodeDiskBlocks || 1;
+      const pct = parsed.effectiveTotalDiskBlocks > 0 || parsed.maxNodeDiskBlocks > 0
+        ? Math.min(100, (node.totalDiskBlocks / denom) * 100)
+        : 0;
+      const selfPct = parsed.effectiveTotalDiskBlocks > 0 || parsed.maxNodeDiskBlocks > 0
+        ? Math.min(pct, (node.exclusiveDiskBlocks / denom) * 100)
+        : 0;
+      return {
+        pct,
+        selfPct,
+        label: node.totalDiskBlocks > 0 ? formatBlocks(node.totalDiskBlocks) : '0 B',
+      };
+    }
     case 'ioTime': {
       const tot = (node.ioTimings?.totalReadMs ?? 0) + (node.ioTimings?.totalWriteMs ?? 0);
       const denom = parsed.effectiveTotalIoMs || parsed.maxNodeIoMs || 1;
@@ -142,9 +156,9 @@ export function getMetricSample(
 }
 
 export function heatClass(pct: number): string {
-  if (pct >= 45) return 'pgs-heat-3';
-  if (pct >= 20) return 'pgs-heat-2';
-  if (pct >= 8) return 'pgs-heat-1';
+  if (pct >= 45) return 'pgp-heat-3';
+  if (pct >= 20) return 'pgp-heat-2';
+  if (pct >= 8) return 'pgp-heat-1';
   return '';
 }
 

@@ -4,6 +4,7 @@ export interface FlameViewOpts {
     metric: MetricMode;
     search: string;
     hotOnly: boolean;
+    hideUnused: boolean;
     onSelect: (id: string) => void;
 }
 export declare function renderFlameView(parsed: ParsedExplain, opts: FlameViewOpts): HTMLElement;
