@@ -44,7 +44,7 @@
   "author": "Nikolay Samokhvalov",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NikolayS/pgprism.git"
+    "url": "git+https://github.com/NikolayS/pgprism.git"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

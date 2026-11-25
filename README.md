@@ -4,11 +4,21 @@
 
 Tiny, zero-dependency TypeScript library and `<pg-plan>` Web Component for Postgres `explain` plans (Postgres 15 through 19).
 
-Try the live demo at **[https://pgprism.dev/](https://pgprism.dev/)** (also served via [nikolays.github.io/pgprism](https://nikolays.github.io/pgprism/)).
+Try the live demo at **[https://pgprism.dev/](https://pgprism.dev/)** (also served via [nikolays.github.io/pgprism](https://nikolays.github.io/pgprism/)) or install from npm via **[pgprism](https://www.npmjs.com/package/pgprism)**.
 
 `pgPrism` parses both `explain (format json)` and text `explain` plans, treats `BUFFERS` as a primary metric in 8 KiB IEC binary units (`KiB`, `MiB`, `GiB`), translates JSON plans back to Postgres text via `jsonToText`, exports Markdown diagnostics via `formatForLLM`, and links findings directly to plan nodes.
 
 ![pgPrism Table view in dark mode](docs/screenshots/table-dark.png)
+
+## Install and quick start
+
+Install from npm:
+
+```sh
+npm install pgprism@alpha
+```
+
+Or drop the prebuilt script directly into HTML from `https://pgprism.dev/pgprism.iife.js`.
 
 ## Four integration modes
 

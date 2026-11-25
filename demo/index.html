@@ -258,6 +258,7 @@
     </div>
     <div class="hdr-actions">
       <a class="btn btn-repo" href="https://github.com/NikolayS/pgprism" target="_blank" rel="noopener">GitHub: NikolayS/pgprism</a>
+      <a class="btn" href="https://www.npmjs.com/package/pgprism" target="_blank" rel="noopener">npm: pgprism</a>
       <button type="button" class="btn" id="pageThemeBtn">Light mode</button>
     </div>
   </header>
@@ -331,6 +332,7 @@ Execution Time: 131.964 ms</pre></pg-plan>
           <button type="button" class="btn qs-btn active" data-qs="prompt">Prompt for AI</button>
           <button type="button" class="btn qs-btn" data-qs="html">1-line HTML</button>
           <button type="button" class="btn qs-btn" data-qs="tag">&lt;pg-plan&gt;</button>
+          <button type="button" class="btn qs-btn" data-qs="npm">npm</button>
           <button type="button" class="btn qs-btn" data-qs="j2t">jsonToText</button>
         </div>
       </div>
@@ -878,7 +880,8 @@ Execution Time: 131.964 ms`
     prompt: 'Add pgPrism (https://github.com/NikolayS/pgprism) to visualize Postgres EXPLAIN plans (JSON or text) on this page. Load https://pgprism.dev/pgprism.iife.js with data-auto-attach for automatic detection, or render plans explicitly with <pg-plan> / PGPrism.renderPlan().',
     html: '<script src="https://pgprism.dev/pgprism.iife.js" data-auto-attach><\/script>',
     tag: '<pg-plan metric="auto">\n  <pre>Seq Scan on users (cost=0.00..15.50 rows=550 width=32)\n  Buffers: shared hit=8</pre>\n</pg-plan>\n<script src="https://pgprism.dev/pgprism.iife.js"><\/script>',
-    j2t: 'import { jsonToText } from "pgprism/json-to-text";\n\nconst textPlan = jsonToText(explainJson);',
+    npm: 'npm install pgprism@alpha\n\nimport { renderPlan, jsonToText, formatForLLM } from "pgprism";\nrenderPlan(document.getElementById("plan"), explainOutput, { metric: "auto" });',
+    j2t: 'npm install pgprism@alpha\n\nimport { jsonToText } from "pgprism/json-to-text";\nconst textPlan = jsonToText(explainJson);',
   };
   let activeQs = 'prompt';
   const qsCode = document.getElementById('qsCode');
