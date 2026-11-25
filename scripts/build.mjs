@@ -34,7 +34,13 @@ const shared = {
 
 await build({ ...shared, format: 'esm', outfile: 'dist/pgprism.js' });
 await build({ ...shared, format: 'cjs', outfile: 'dist/pgprism.cjs' });
-await build({ ...shared, format: 'iife', globalName: 'pgprism', outfile: 'dist/pgprism.iife.js' });
+await build({
+  ...shared,
+  format: 'iife',
+  globalName: 'pgprism',
+  footer: { js: 'if(typeof globalThis!=="undefined")globalThis.PGPrism=pgprism;' },
+  outfile: 'dist/pgprism.iife.js',
+});
 
 // Standalone subpath bundle for jsonToText (no DOM / CSS)
 await build({ ...shared, entryPoints: ['src/json-to-text.ts'], plugins: [], format: 'esm', outfile: 'dist/json-to-text.js' });
@@ -42,7 +48,7 @@ await build({ ...shared, entryPoints: ['src/json-to-text.ts'], plugins: [], form
 
 const cjsRaw = await build({ ...shared, format: 'cjs', write: false });
 const cjsCode = cjsRaw.outputFiles[0].text;
-const umdCode = `(function(r,f){if(typeof define==="function"&&define.amd){define([],f)}else if(typeof module==="object"&&module.exports){module.exports=f()}else{r.pgprism=f()}})(typeof globalThis!=="undefined"?globalThis:this,function(){var exports={};var module={exports:exports};${cjsCode};return module.exports});\n`;
+const umdCode = `(function(r,f){if(typeof define==="function"&&define.amd){define([],f)}else if(typeof module==="object"&&module.exports){module.exports=f()}else{r.pgprism=r.PGPrism=f()}})(typeof globalThis!=="undefined"?globalThis:this,function(){var exports={};var module={exports:exports};${cjsCode};return module.exports});\n`;
 writeFileSync('dist/pgprism.umd.js', umdCode, 'utf8');
 writeFileSync('dist/pgprism.css', minCss + '\n', 'utf8');
 
