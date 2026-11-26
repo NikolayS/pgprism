@@ -32,7 +32,7 @@ npm install pgprism@0.1.0-beta.1
 
 - **Embeds anywhere.** One script tag, a `<pg-plan>` Web Component, or an npm import. Shadow DOM keeps your page's CSS and `pgPrism`'s CSS apart.
 - **Tiny.** Zero dependencies. One file with styles included, about 37 KiB gzipped.
-- **`BUFFERS` first.** Block counts become bytes in IEC binary units: `shared hit=16636` reads as `130 MiB`.
+- **`BUFFERS` first.** Block counts become bytes in IEC binary units: `shared read=94304` reads as `737 MiB`.
 - **Finds what is wrong.** Row misestimates, filter discards, temp spills, lossy bitmaps, and more, each linked to its plan node.
 - **Table, Tree, Flame.** Plus Text and JSON views, with one switch between buffers, disk reads, time, rows, and cost.
 - **JSON to text.** `jsonToText` turns `explain (format json)` plans back into classic Postgres text.

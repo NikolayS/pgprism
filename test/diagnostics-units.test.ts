@@ -3,24 +3,25 @@ import assert from 'node:assert/strict';
 import { diagnosePlan } from '../src/diagnostics';
 import { parsePlan } from '../src/parser';
 import { blocksToBytes, formatBlocks, formatBytes, formatFactor } from '../src/units';
-import { BITMAP_SUBPLANS_SAMPLE } from './bitmap-subplans-fixture';
+import { DISK_SPILLS_PLAN, MOVIES_SEQ_SCANS_PLAN } from './sample-plans-fixture';
 
 test('IEC binary units and 8 KiB block formatting', () => {
   assert.equal(blocksToBytes(1), 8192);
   assert.equal(formatBytes(0), '0 B');
   assert.equal(formatBlocks(1), '8 KiB');
   assert.equal(formatBlocks(128), '1 MiB');
-  assert.equal(formatBlocks(16636), '130 MiB');
+  assert.equal(formatBlocks(94304), '737 MiB');
   assert.equal(formatBlocks(131072), '1 GiB');
-  assert.equal(formatFactor(35363.97), '35,364×');
+  assert.equal(formatFactor(351449.97), '351,450×');
   assert.equal(formatFactor(3.25), '3.3×');
 });
 
 test('Diagnostics engine flags spills, lossy bitmaps, disabled nodes, misestimates, and filter discards', () => {
-  const p = parsePlan(BITMAP_SUBPLANS_SAMPLE);
-  const diags = diagnosePlan(p);
-  assert.ok(diags.some((d) => d.code === 'row-misestimate' && d.severity === 'high'));
-  assert.ok(diags.some((d) => d.code === 'filter-discard' && d.severity === 'high'));
+  const spills = diagnosePlan(parsePlan(DISK_SPILLS_PLAN));
+  assert.ok(spills.some((d) => d.code === 'row-misestimate' && d.severity === 'high'));
+  assert.ok(spills.some((d) => d.code === 'disk-spill' && d.severity === 'high'));
+  const seqScans = diagnosePlan(parsePlan(MOVIES_SEQ_SCANS_PLAN));
+  assert.ok(seqScans.some((d) => d.code === 'filter-discard' && d.severity === 'high'));
 
   // Synthetic test with disk spill, lossy bitmap, disabled node, worker shortfall, heap fetches, JIT
   const tricky = [

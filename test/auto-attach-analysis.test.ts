@@ -13,7 +13,7 @@ import {
   resolveInitialTheme,
   resolveThemeFromBackgroundLayers,
 } from '../src/ui/render';
-import { BITMAP_SUBPLANS_SAMPLE } from './bitmap-subplans-fixture';
+import { CORRELATED_SUBPLANS_PLAN, CTE_BITMAP_PLAN } from './sample-plans-fixture';
 
 test('isLikelyExplainPlan accepts JSON/TEXT plans and rejects arbitrary SQL, JSON, and prose', () => {
   assert.equal(isLikelyExplainPlan('SELECT id, name FROM users WHERE active = true;'), false);
@@ -42,15 +42,16 @@ test('isLikelyExplainPlan accepts JSON/TEXT plans and rejects arbitrary SQL, JSO
 });
 
 test('analyzePlan aggregates byRelation, byNodeType, CPU* vs I/O split, buffer hit %, and SubPlan targets', () => {
-  const samplePlan = BITMAP_SUBPLANS_SAMPLE;
+  const samplePlan = CTE_BITMAP_PLAN;
   const analysis = analyzePlan(samplePlan);
 
   assert.ok(analysis.diagnostics.length > 0);
   assert.ok(analysis.bufferHitPercent !== null && analysis.bufferHitPercent > 90);
-  assert.ok(analysis.byRelation.some((r) => r.name.includes('product_names')));
+  assert.ok(analysis.byRelation.some((r) => r.name === 't1'));
   assert.ok(analysis.byNodeType.some((t) => t.nodeType === 'Bitmap Heap Scan'));
   assert.ok(analysis.parsed.subplanTargets['SubPlan 2']);
-  assert.ok(analysis.parsed.subplanTargets['SubPlan 3']);
+  assert.ok(analysis.parsed.subplanTargets['CTE recent']);
+  assert.ok(analyzePlan(CORRELATED_SUBPLANS_PLAN).parsed.subplanTargets['SubPlan expr_2']);
 
   // I/O timing CPU* split check
   const ioPlan = [

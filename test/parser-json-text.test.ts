@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan } from '../src/parser';
-import { BITMAP_SUBPLANS_SAMPLE } from './bitmap-subplans-fixture';
+import { CORRELATED_SUBPLANS_PLAN, CTE_BITMAP_PLAN, MOVIES_SEQ_SCANS_PLAN } from './sample-plans-fixture';
 
 test('PG 15 JSON plan: legacy I/O timings, JIT, Memoize, Triggers, Settings, negative 64-bit Query ID', () => {
   const pg15 = JSON.stringify([
@@ -401,17 +401,31 @@ test('PG 19 JSON & TEXT: Replaces, WAL FPI Bytes, Memoize Estimates, EXPLAIN (IO
   assert.equal(res.replaces, 'Scan on dummy');
 });
 
-test('PG 17 text plan with a CTE, SubPlans, and a bitmap scan parses cleanly', () => {
-  const p = parsePlan(BITMAP_SUBPLANS_SAMPLE);
+test('TEXT plans with a CTE, numbered and named SubPlans, a bitmap scan, and parallel workers parse cleanly', () => {
+  const p = parsePlan(CTE_BITMAP_PLAN);
   assert.equal(p.plan.nodeType, 'Bitmap Heap Scan');
-  assert.equal(p.queryIdentifier, '6039174250186347112');
+  assert.equal(p.queryIdentifier, '4611686018427387904');
   assert.ok(p.executionTimeMs && p.executionTimeMs > 0);
-  assert.ok(p.plan.plans.some((c) => c.subplanName === 'CTE terms'));
+  assert.ok(p.plan.plans.some((c) => c.subplanName === 'CTE recent'));
   assert.ok(p.plan.plans.some((c) => c.subplanName === 'SubPlan 2'));
-  assert.ok(p.plan.plans.some((c) => c.subplanName === 'SubPlan 3'));
   assert.ok(p.plan.exclusiveTimeMs > 0);
-  assert.ok(p.plan.totalBufferBlocks > 8000);
+  assert.equal(p.plan.totalBufferBlocks, 842);
   assert.ok(p.plan.rowEstimateFactor > 10000);
+
+  // PG 19 names subplans instead of numbering them: "SubPlan expr_1"
+  const named = parsePlan(CORRELATED_SUBPLANS_PLAN);
+  assert.equal(named.plan.nodeType, 'Seq Scan');
+  assert.deepEqual(
+    named.plan.plans.map((c) => c.subplanName),
+    ['SubPlan expr_1', 'SubPlan expr_2']
+  );
+  assert.ok(named.plan.plans.every((c) => c.parentRelationship === 'SubPlan'));
+  assert.equal(named.plan.totalBufferBlocks, 17127471);
+
+  const parallel = parsePlan(MOVIES_SEQ_SCANS_PLAN);
+  assert.equal(parallel.plan.nodeType, 'Unique');
+  assert.equal(parallel.executionTimeMs, 390.922);
+  assert.equal(parallel.plan.totalBufferBlocks, 94380);
 });
 
 test('Error handling for empty and malformed inputs', () => {
