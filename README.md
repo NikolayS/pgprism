@@ -17,7 +17,7 @@
 ## Quick start: one script tag
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js" data-auto-attach></script>
+<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js" data-auto-attach></script>
 ```
 
 Add it to any HTML page. Every `<pre>` that holds a Postgres plan, JSON or text, gets an interactive view with a toggle back to the raw text. There is no build step, no framework, and no backend: `pgPrism` runs entirely in the browser and sends the plan nowhere.
@@ -25,7 +25,7 @@ Add it to any HTML page. Every `<pre>` that holds a Postgres plan, JSON or text,
 Building an app? Install from npm and use the [`<pg-plan>` tag or the API](#four-integration-modes):
 
 ```sh
-npm install pgprism@0.1.0-beta.1
+npm install pgprism@0.1.0-beta.2
 ```
 
 ## Why pgPrism
@@ -43,7 +43,7 @@ npm install pgprism@0.1.0-beta.1
 
 ## Install and pinning
 
-For production pages, pin `0.1.0-beta.1` on jsDelivr, unpkg (`https://unpkg.com/pgprism@0.1.0-beta.1/dist/pgprism.iife.js`), or vendor `dist/pgprism.iife.js` locally. `https://pgprism.dev/pgprism.iife.js` is available as a rolling preview URL tracking latest `main`.
+For production pages, pin `0.1.0-beta.2` on jsDelivr, unpkg (`https://unpkg.com/pgprism@0.1.0-beta.2/dist/pgprism.iife.js`), or vendor `dist/pgprism.iife.js` locally. `https://pgprism.dev/pgprism.iife.js` is available as a rolling preview URL tracking latest `main`.
 
 ## Four integration modes
 
@@ -53,7 +53,7 @@ Add `data-auto-attach` to the script tag for static blogs and HTML reports (`asy
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js"
+  src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js"
   data-auto-attach
   data-mode="toggle"
   async

@@ -5,6 +5,8 @@ import {
   formatForLLM,
   isLikelyExplainPlan,
   jsonToText,
+  renderPlan,
+  type PlanState,
 } from '../src/index';
 import { bootstrapDocument, resolveAutoAttachScriptConfig } from '../src/auto-attach';
 import {
@@ -104,6 +106,8 @@ interface FakeEl {
   hidden: boolean;
   textContent: string;
   plan?: unknown;
+  readonly firstChild: FakeEl | null;
+  readonly childNodes: FakeEl[];
   getAttribute(k: string): string | null;
   setAttribute(k: string, v: string): void;
   hasAttribute(k: string): boolean;
@@ -112,24 +116,40 @@ interface FakeEl {
   querySelector(sel: string): FakeEl | null;
   insertBefore(node: FakeEl, ref: FakeEl | null): FakeEl;
   appendChild(node: FakeEl): FakeEl;
+  removeChild(node: FakeEl): FakeEl;
   append(...nodes: FakeEl[]): void;
   remove(): void;
-  addEventListener(): void;
+  scrollIntoView(): void;
+  addEventListener(type: string, fn: (e: unknown) => void): void;
+  dispatchEvent(ev: { type: string }): boolean;
   classList: { contains(c: string): boolean };
 }
 
 function makeFakeEl(tagName: string, attrs: Record<string, string> = {}, textContent = '', bgColor = 'rgba(0, 0, 0, 0)'): FakeEl {
   const attributes = new Map(Object.entries(attrs));
+  const listeners = new Map<string, Array<(e: unknown) => void>>();
+  const styleObj: Record<string, string> = bgColor ? { backgroundColor: bgColor } : {};
+  Object.defineProperty(styleObj, 'setProperty', {
+    value: (k: string, v: string) => {
+      styleObj[k] = v;
+    },
+  });
   const el: FakeEl = {
     tagName: tagName.toUpperCase(),
     children: [],
     parentNode: null,
     parentElement: null,
     attributes,
-    style: bgColor ? { backgroundColor: bgColor } : {},
+    style: styleObj,
     className: attrs['class'] ?? '',
     hidden: false,
     textContent,
+    get firstChild() {
+      return this.children[0] ?? null;
+    },
+    get childNodes() {
+      return this.children;
+    },
     getAttribute(k: string) {
       return this.attributes.get(k) ?? null;
     },
@@ -153,8 +173,10 @@ function makeFakeEl(tagName: string, attrs: Record<string, string> = {}, textCon
       return null;
     },
     querySelector(sel: string): FakeEl | null {
+      const nodeIdMatch = /^\[data-node-id="([^"]+)"\]$/.exec(sel);
       for (const ch of this.children) {
         if (sel === 'code' && ch.tagName === 'CODE') return ch;
+        if (nodeIdMatch && ch.getAttribute('data-node-id') === nodeIdMatch[1]) return ch;
         const sub = ch.querySelector(sel);
         if (sub) return sub;
       }
@@ -176,6 +198,10 @@ function makeFakeEl(tagName: string, attrs: Record<string, string> = {}, textCon
     appendChild(node: FakeEl) {
       return this.insertBefore(node, null);
     },
+    removeChild(node: FakeEl) {
+      node.remove();
+      return node;
+    },
     append(...nodes: FakeEl[]) {
       for (const n of nodes) this.appendChild(n);
     },
@@ -187,7 +213,16 @@ function makeFakeEl(tagName: string, attrs: Record<string, string> = {}, textCon
       this.parentNode = null;
       this.parentElement = null;
     },
-    addEventListener() {},
+    scrollIntoView() {},
+    addEventListener(type: string, fn: (e: unknown) => void) {
+      const arr = listeners.get(type) ?? [];
+      arr.push(fn);
+      listeners.set(type, arr);
+    },
+    dispatchEvent(ev: { type: string }) {
+      for (const fn of listeners.get(ev.type) ?? []) fn(ev);
+      return true;
+    },
     classList: {
       contains(cls: string) {
         return el.className.split(/\s+/).includes(cls);
@@ -201,7 +236,7 @@ test('bootstrapDocument & data-auto-attach work when document.currentScript is n
   const html = makeFakeEl('html');
   const body = makeFakeEl('body');
   const scriptEl = makeFakeEl('script', {
-    src: 'https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js',
+    src: 'https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js',
     async: '',
     'data-auto-attach': '',
     'data-mode': 'below',
@@ -330,5 +365,78 @@ test('auto theme detection reads computed background luminance, prefers-color-sc
     else (globalThis as { document?: Document }).document = prevDoc;
     if (prevWin === undefined) delete (globalThis as { window?: Window }).window;
     else (globalThis as { window?: Window }).window = prevWin;
+  }
+});
+
+test('renderPlan exposes selectedNode, onStateChange, pgprism:state, setMetric, and getState', () => {
+  const html = makeFakeEl('html', { 'data-theme': 'dark' });
+  const body = makeFakeEl('body');
+  const container = makeFakeEl('div');
+  html.appendChild(body);
+  body.appendChild(container);
+
+  const prevDoc = (globalThis as { document?: Document }).document;
+  (globalThis as { document?: Document }).document = {
+    documentElement: html,
+    body,
+    createElement(tag: string) {
+      return makeFakeEl(tag);
+    },
+    createElementNS(_ns: string, tag: string) {
+      return makeFakeEl(tag);
+    },
+    createTextNode(txt: string) {
+      return makeFakeEl('#text', {}, txt);
+    },
+  } as unknown as Document;
+
+  const plan = `Limit  (cost=0.00..15.50 rows=5 width=32) (actual time=0.020..0.095 rows=5 loops=1)
+  Buffers: shared hit=12
+  ->  Seq Scan on users  (cost=0.00..31.00 rows=550 width=32) (actual time=0.012..0.089 rows=550 loops=1)
+        Buffers: shared hit=12`;
+
+  const stateEvents: PlanState[] = [];
+  const domEvents: PlanState[] = [];
+  const selectedNodes: Array<string | null> = [];
+  container.addEventListener('pgprism:state', (e) => {
+    domEvents.push((e as CustomEvent<PlanState>).detail);
+  });
+
+  try {
+    const handle = renderPlan(container as unknown as HTMLElement, plan, {
+      useShadow: false,
+      injectStyles: false,
+      selectedNode: 'n1',
+      onStateChange: (s) => stateEvents.push(s),
+      onSelectNode: (n) => selectedNodes.push(n ? n.id : null),
+    });
+
+    assert.deepEqual(handle.getState(), { view: 'table', metric: 'buffers', selectedNodeId: 'n1' });
+
+    handle.setMetric('exclusiveTime');
+    assert.deepEqual(handle.getState(), { view: 'table', metric: 'exclusiveTime', selectedNodeId: 'n1' });
+    assert.deepEqual(stateEvents.at(-1), { view: 'table', metric: 'exclusiveTime', selectedNodeId: 'n1' });
+    assert.deepEqual(domEvents.at(-1), { view: 'table', metric: 'exclusiveTime', selectedNodeId: 'n1' });
+
+    handle.setMetric('auto');
+    assert.deepEqual(handle.getState(), { view: 'table', metric: 'buffers', selectedNodeId: 'n1' });
+
+    handle.setView('flame');
+    assert.deepEqual(handle.getState(), { view: 'flame', metric: 'buffers', selectedNodeId: 'n1' });
+    assert.deepEqual(domEvents.at(-1), { view: 'flame', metric: 'buffers', selectedNodeId: 'n1' });
+
+    handle.selectNode(null);
+    assert.deepEqual(handle.getState(), { view: 'flame', metric: 'buffers', selectedNodeId: null });
+    assert.deepEqual(selectedNodes, [null]);
+    assert.deepEqual(stateEvents.at(-1), { view: 'flame', metric: 'buffers', selectedNodeId: null });
+
+    // Unknown selectedNode sanitizes cleanly to null during update()
+    handle.update(plan, { selectedNode: 'does-not-exist', view: 'tree', metric: 'rows' });
+    assert.deepEqual(handle.getState(), { view: 'tree', metric: 'rows', selectedNodeId: null });
+
+    handle.destroy();
+  } finally {
+    if (prevDoc === undefined) delete (globalThis as { document?: Document }).document;
+    else (globalThis as { document?: Document }).document = prevDoc;
   }
 });

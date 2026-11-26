@@ -442,7 +442,7 @@
       <details class="qs-pin">
         <summary>Pin a version for production</summary>
         <p class="qs-note">
-          Pin <code>https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js</code>, <code>https://unpkg.com/pgprism@0.1.0-beta.1/dist/pgprism.iife.js</code>, or vendor <code>dist/pgprism.iife.js</code> locally for production pages (<code>async</code> and <code>defer</code> supported). Rolling preview from <code>main</code>: <code>https://pgprism.dev/pgprism.iife.js</code>.
+          Pin <code>https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js</code>, <code>https://unpkg.com/pgprism@0.1.0-beta.2/dist/pgprism.iife.js</code>, or vendor <code>dist/pgprism.iife.js</code> locally for production pages (<code>async</code> and <code>defer</code> supported). Rolling preview from <code>main</code>: <code>https://pgprism.dev/pgprism.iife.js</code>.
         </p>
       </details>
     </section>
@@ -1305,11 +1305,11 @@ Execution Time: 5701.668 ms`
   });
 
   const SNIPPETS = {
-    prompt: 'Add pgPrism (https://github.com/NikolayS/pgprism) to visualize Postgres EXPLAIN plans (JSON or text) on this page. Load https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js with data-auto-attach for automatic detection, or render plans explicitly with <pg-plan> / PGPrism.renderPlan().',
-    html: '<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js" data-auto-attach async><\/script>',
-    tag: '<pg-plan metric="auto">\n  <pre>Seq Scan on users (cost=0.00..15.50 rows=550 width=32)\n  Buffers: shared hit=8</pre>\n</pg-plan>\n<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js" async><\/script>',
-    npm: 'npm install pgprism@0.1.0-beta.1\n\nimport { renderPlan, jsonToText, formatForLLM } from "pgprism";\nrenderPlan(document.getElementById("plan"), explainOutput, { metric: "auto" });',
-    j2t: 'npm install pgprism@0.1.0-beta.1\n\nimport { jsonToText } from "pgprism/json-to-text";\nconst textPlan = jsonToText(explainJson);',
+    prompt: 'Add pgPrism (https://github.com/NikolayS/pgprism) to visualize Postgres EXPLAIN plans (JSON or text) on this page. Load https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js with data-auto-attach for automatic detection, or render plans explicitly with <pg-plan> / PGPrism.renderPlan().',
+    html: '<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js" data-auto-attach async><\/script>',
+    tag: '<pg-plan metric="auto">\n  <pre>Seq Scan on users (cost=0.00..15.50 rows=550 width=32)\n  Buffers: shared hit=8</pre>\n</pg-plan>\n<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.2/dist/pgprism.iife.js" async><\/script>',
+    npm: 'npm install pgprism@0.1.0-beta.2\n\nimport { renderPlan, jsonToText, formatForLLM } from "pgprism";\nrenderPlan(document.getElementById("plan"), explainOutput, { metric: "auto" });',
+    j2t: 'npm install pgprism@0.1.0-beta.2\n\nimport { jsonToText } from "pgprism/json-to-text";\nconst textPlan = jsonToText(explainJson);',
   };
   // What each Quick start option does, in one sentence.
   const SNIPPET_NOTES = {
