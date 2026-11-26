@@ -6,6 +6,7 @@ import type {
   MetricMode,
   ParsedExplain,
   PlanNode,
+  PlanState,
   RenderOptions,
   ThemeMode,
   ViewMode,
@@ -30,7 +31,9 @@ export interface PlanHandle {
   update: (nextPlan: string | unknown, nextOptions?: RenderOptions) => void;
   selectNode: (nodeId: string | null) => void;
   setView: (view: ViewMode) => void;
+  setMetric: (metric: MetricMode | 'auto') => void;
   setTheme: (theme: 'dark' | 'light') => void;
+  getState: () => PlanState;
   destroy: () => void;
   readonly parsed: ParsedExplain;
 }
@@ -454,7 +457,8 @@ export function renderPlan(
   let explicitTheme = options.theme === 'dark' || options.theme === 'light';
   let view: ViewMode = options.view ?? 'table';
   let metric: MetricMode = resolveMetric(parsed, options.metric);
-  let selectedId: string | null = null;
+  let selectedId: string | null =
+    options.selectedNode && findNode(parsed.plan, options.selectedNode) ? options.selectedNode : null;
   let diagExpanded = false;
   let breakdownExpanded = false;
   let hotOnly = false;
@@ -496,9 +500,40 @@ export function renderPlan(
     schemeMedia.addEventListener?.('change', syncAutoTheme);
   }
 
+  const emitState = () => {
+    const state: PlanState = { view, metric, selectedNodeId: selectedId };
+    currentOpts.onStateChange?.(state);
+    if (typeof CustomEvent !== 'undefined' && typeof container.dispatchEvent === 'function') {
+      container.dispatchEvent(
+        new CustomEvent<PlanState>('pgprism:state', {
+          detail: state,
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  };
+
+  const expandAncestors = (n: PlanNode, targetId: string): boolean => {
+    if (n.id === targetId) return true;
+    for (const c of n.plans) {
+      if (expandAncestors(c, targetId)) {
+        collapsed.delete(n.id);
+        return true;
+      }
+    }
+    return false;
+  };
+
   const selectNode = (id: string | null) => {
-    selectedId = id;
-    currentOpts.onSelectNode?.(findNode(parsed.plan, id));
+    const targetNode = id ? findNode(parsed.plan, id) : null;
+    selectedId = targetNode ? targetNode.id : null;
+    if (targetNode) {
+      if (targetNode.neverExecuted) hideUnused = false;
+      expandAncestors(parsed.plan, targetNode.id);
+    }
+    currentOpts.onSelectNode?.(targetNode);
+    emitState();
     paint();
   };
 
@@ -506,23 +541,15 @@ export function renderPlan(
     if (view === 'text' || view === 'json') view = 'table';
     const targetNode = findNode(parsed.plan, id);
     if (targetNode?.neverExecuted) hideUnused = false;
-    // Ensure ancestors are expanded
-    const expandPath = (n: PlanNode): boolean => {
-      if (n.id === id) return true;
-      for (const c of n.plans) {
-        if (expandPath(c)) {
-          collapsed.delete(n.id);
-          return true;
-        }
-      }
-      return false;
-    };
-    expandPath(parsed.plan);
-    selectedId = id;
-    currentOpts.onSelectNode?.(findNode(parsed.plan, id));
+    expandAncestors(parsed.plan, id);
+    selectedId = targetNode ? targetNode.id : null;
+    currentOpts.onSelectNode?.(targetNode);
+    emitState();
     paint();
-    const target = rootEl.querySelector(`[data-node-id="${id}"]`);
-    target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (selectedId) {
+      const target = rootEl.querySelector(`[data-node-id="${selectedId}"]`);
+      target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   };
 
   const paint = () => {
@@ -592,6 +619,7 @@ export function renderPlan(
           );
           btn.addEventListener('click', () => {
             view = mode;
+            emitState();
             paint();
           });
           return btn;
@@ -625,6 +653,7 @@ export function renderPlan(
             const b = h('button', { type: 'button', className: `pgp-btn pgp-btn-sm ${active ? 'active' : ''}` }, ml);
             b.addEventListener('click', () => {
               metric = mv;
+              emitState();
               paint();
             });
             grp.appendChild(b);
@@ -639,6 +668,7 @@ export function renderPlan(
           }
           metricSel.addEventListener('change', () => {
             metric = metricSel.value as MetricMode;
+            emitState();
             paint();
           });
           rightTools.appendChild(metricSel);
@@ -790,6 +820,10 @@ export function renderPlan(
   };
 
   paint();
+  if (selectedId) {
+    const initialTarget = rootEl.querySelector(`[data-node-id="${selectedId}"]`);
+    initialTarget?.scrollIntoView?.({ block: 'nearest' });
+  }
 
   return {
     get parsed() {
@@ -808,21 +842,35 @@ export function renderPlan(
       }
       metric = resolveMetric(parsed, nextOptions?.metric ?? currentOpts.metric);
       collapsed.clear();
-      selectedId = null;
+      const nextSel = nextOptions?.selectedNode ?? null;
+      selectedId = nextSel && findNode(parsed.plan, nextSel) ? nextSel : null;
       diagExpanded = false;
       breakdownExpanded = false;
       hideUnused = false;
       paint();
+      if (selectedId) {
+        const target = rootEl.querySelector(`[data-node-id="${selectedId}"]`);
+        target?.scrollIntoView?.({ block: 'nearest' });
+      }
     },
     selectNode,
     setView(v: ViewMode) {
       view = v;
+      emitState();
+      paint();
+    },
+    setMetric(m: MetricMode | 'auto') {
+      metric = resolveMetric(parsed, m);
+      emitState();
       paint();
     },
     setTheme(t: 'dark' | 'light') {
       explicitTheme = true;
       theme = t;
       paint();
+    },
+    getState() {
+      return { view, metric, selectedNodeId: selectedId };
     },
     destroy() {
       themeObserver?.disconnect();

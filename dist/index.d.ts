@@ -4,7 +4,7 @@ export { formatForLLM, formatNodeForLLM } from './format-llm';
 export { jsonToText, parsedToText } from './json-to-text';
 export { buildDisplayTitle, parsePlan } from './parser';
 export { PGPRISM_CSS } from './styles';
-export type { AutoAttachOptions, AutoAttachResult, BufferGroup, BufferStats, Diagnostic, DiagnosticSeverity, FormatForLLMOptions, IoPrefetchStats, IoTimingStats, JitStats, JsonToTextOptions, MetricMode, NodeTypeSummary, ParsedExplain, PlanAnalysis, PlanNode, PlanningStats, RelationSummary, RenderOptions, SerializationStats, SortGroupStats, TempBufferGroup, ThemeMode, TriggerInfo, ViewMode, WalStats, WorkerStats, } from './types';
+export type { AutoAttachOptions, AutoAttachResult, BufferGroup, BufferStats, Diagnostic, DiagnosticSeverity, FormatForLLMOptions, IoPrefetchStats, IoTimingStats, JitStats, JsonToTextOptions, MetricMode, NodeTypeSummary, ParsedExplain, PlanAnalysis, PlanNode, PlanState, PlanningStats, RelationSummary, RenderOptions, SerializationStats, SortGroupStats, TempBufferGroup, ThemeMode, TriggerInfo, ViewMode, WalStats, WorkerStats, } from './types';
 export { renderPlan, type PlanHandle } from './ui/render';
 export { PG_BLOCK_SIZE, blocksToBytes, formatBlocks, formatBytes, formatCompactCount, formatCount, formatFactor, formatKbAsIec, formatMs, quoteIdentifier, } from './units';
 export { PgPlanElement, registerElement } from './web-component';

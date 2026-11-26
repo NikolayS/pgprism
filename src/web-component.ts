@@ -5,11 +5,15 @@ const BaseElement: typeof HTMLElement =
   typeof HTMLElement !== 'undefined' ? HTMLElement : (class {} as typeof HTMLElement);
 
 export class PgPlanElement extends BaseElement {
-  static observedAttributes = ['plan', 'view', 'theme', 'metric', 'diagnostics', 'max-height'];
+  static observedAttributes = ['plan', 'view', 'theme', 'metric', 'node', 'diagnostics', 'max-height'];
 
   private _plan: string | unknown = null;
   private _handle: PlanHandle | null = null;
   private _ready = false;
+
+  get handle(): PlanHandle | null {
+    return this._handle;
+  }
 
   get plan(): string | unknown {
     return this._plan;
@@ -45,19 +49,36 @@ export class PgPlanElement extends BaseElement {
     if (name === 'plan' && newVal !== null) {
       this._plan = newVal;
     }
-    if (this._ready) this.sync();
+    if (!this._ready) return;
+    if (this._handle) {
+      if (name === 'node') {
+        this._handle.selectNode(newVal || null);
+        return;
+      }
+      if (name === 'view' && newVal) {
+        this._handle.setView(newVal as ViewMode);
+        return;
+      }
+      if (name === 'metric' && newVal) {
+        this._handle.setMetric(newVal as MetricMode | 'auto');
+        return;
+      }
+    }
+    this.sync();
   }
 
   private readOptions(): RenderOptions {
     const viewAttr = this.getAttribute('view') as ViewMode | null;
     const themeAttr = this.getAttribute('theme') as ThemeMode | null;
     const metricAttr = this.getAttribute('metric') as (MetricMode | 'auto') | null;
+    const nodeAttr = this.getAttribute('node');
     const diagAttr = this.getAttribute('diagnostics');
     const maxHeight = this.getAttribute('max-height') ?? undefined;
     return {
       view: viewAttr ?? undefined,
       theme: themeAttr ?? 'auto',
       metric: metricAttr ?? undefined,
+      selectedNode: nodeAttr || undefined,
       showDiagnostics: diagAttr === 'false' ? false : true,
       maxHeight,
       useShadow: true,

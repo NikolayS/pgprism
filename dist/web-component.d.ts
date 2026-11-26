@@ -1,9 +1,11 @@
+import { type PlanHandle } from './ui/render';
 declare const BaseElement: typeof HTMLElement;
 export declare class PgPlanElement extends BaseElement {
     static observedAttributes: string[];
     private _plan;
     private _handle;
     private _ready;
+    get handle(): PlanHandle | null;
     get plan(): string | unknown;
     set plan(value: string | unknown);
     connectedCallback(): void;

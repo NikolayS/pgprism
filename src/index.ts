@@ -21,6 +21,7 @@ export type {
   ParsedExplain,
   PlanAnalysis,
   PlanNode,
+  PlanState,
   PlanningStats,
   RelationSummary,
   RenderOptions,

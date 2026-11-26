@@ -320,10 +320,16 @@ export interface Diagnostic {
     nodeTitle: string;
     metric?: string;
 }
+export interface PlanState {
+    view: ViewMode;
+    metric: MetricMode;
+    selectedNodeId: string | null;
+}
 export interface RenderOptions {
     theme?: ThemeMode;
     view?: ViewMode;
     metric?: MetricMode | 'auto';
+    selectedNode?: string | null;
     showDiagnostics?: boolean;
     showHeader?: boolean;
     showToolbar?: boolean;
@@ -332,6 +338,7 @@ export interface RenderOptions {
     injectStyles?: boolean;
     useShadow?: boolean;
     onSelectNode?: (node: PlanNode | null) => void;
+    onStateChange?: (state: PlanState) => void;
 }
 export interface PlanAnalysis {
     parsed: ParsedExplain;
