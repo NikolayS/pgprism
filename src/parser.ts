@@ -1181,8 +1181,8 @@ function parseTextPlan(raw: string): Omit<ParsedExplain, ComputedMetricFields> {
       continue;
     }
 
-    // Check for CTE / InitPlan / SubPlan headers
-    if (/^(CTE \S+|InitPlan \d+.*|SubPlan \d+.*)$/.test(trimmed)) {
+    // Check for CTE / InitPlan / SubPlan headers ("SubPlan 2" up to PG 18, "SubPlan expr_1" from PG 19)
+    if (/^(CTE \S+|(?:InitPlan|SubPlan) \w+.*)$/.test(trimmed)) {
       while (stack.length > 1 && indent <= stack[stack.length - 1]!.nodeIndent) {
         stack.pop();
       }

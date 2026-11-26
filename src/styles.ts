@@ -477,6 +477,7 @@ export const PGPRISM_CSS = `
   align-items: center;
   gap: 5px;
   min-width: 170px;
+  padding-left: var(--pgp-indent, 0px);
 }
 .pgp-depth-arrow {
   color: var(--pgp-ink-faint);
@@ -519,6 +520,9 @@ export const PGPRISM_CSS = `
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 300px;
+  /* Takes only the room left over, so it gives way before the node name has to wrap */
+  flex: 1 1 0;
+  min-width: 0;
 }
 .pgp-pill {
   display: inline-block;
@@ -892,6 +896,22 @@ export const PGPRISM_CSS = `
     grid-template-columns: minmax(110px, 42%) minmax(70px, 1fr) auto;
     gap: 6px;
   }
+  /* Phone: keep the metric column next to the node name; the rest scrolls sideways */
+  .pgp-table .pgp-node-sub, .pgp-table .pgp-depth-arrow { display: none; }
+  .pgp-table .pgp-node-cell {
+    box-sizing: border-box;
+    width: 40vw;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 1px;
+    padding-left: calc(var(--pgp-indent, 0px) * 0.45);
+  }
+  .pgp-table .pgp-node-title { flex: 1 1 76px; min-width: 0; overflow-wrap: break-word; }
+  .pgp-table th, .pgp-table td { padding: 6px 6px; }
+  .pgp-table th.num { white-space: normal; }
+  .pgp-table th:first-child, .pgp-table td:first-child { padding-left: 10px; }
+  .pgp-table th:nth-child(5), .pgp-table td:nth-child(5),
+  .pgp-table th:nth-child(7), .pgp-table td:nth-child(7) { display: none; }
 }
 .pgp-error {
   padding: 14px;

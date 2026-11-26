@@ -111,7 +111,7 @@ export function renderTableView(parsed: ParsedExplain, opts: TableViewOpts): HTM
     const nodeCell = h(
       'td',
       null,
-      h('div', { className: 'pgp-node-cell', style: indentPx ? { paddingLeft: `${indentPx}px` } : undefined }, foldBtn, ...titleBits)
+      h('div', { className: 'pgp-node-cell', style: indentPx ? { '--pgp-indent': `${indentPx}px` } : undefined }, foldBtn, ...titleBits)
     );
 
     // Exclusive time / cost

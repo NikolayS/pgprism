@@ -78,7 +78,7 @@ function findReferencedSubplans(parsed: ParsedExplain, node: PlanNode): Array<{ 
   ]
     .filter(Boolean)
     .join('\n');
-  const re = /\b((?:InitPlan|SubPlan)\s+\d+)\b/g;
+  const re = /\b((?:InitPlan|SubPlan)\s+\w+)\b/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(fields)) !== null) {
     addRef(m[1]!);

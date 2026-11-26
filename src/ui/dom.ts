@@ -19,7 +19,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(
         el.className = String(v);
       } else if (k === 'style' && typeof v === 'object') {
         for (const [sk, sv] of Object.entries(v)) {
-          if (sv !== undefined) (el.style as unknown as Record<string, string>)[sk] = sv;
+          if (sv === undefined) continue;
+          if (sk.startsWith('--')) el.style.setProperty(sk, sv);
+          else (el.style as unknown as Record<string, string>)[sk] = sv;
         }
       } else if (v === true) {
         el.setAttribute(k, '');
