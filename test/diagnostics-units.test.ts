@@ -1,12 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
 import { diagnosePlan } from '../src/diagnostics';
 import { parsePlan } from '../src/parser';
 import { blocksToBytes, formatBlocks, formatBytes, formatFactor } from '../src/units';
-import { WAVE1A_SAMPLE } from './wave1a-fixture';
-
-const WAVE1A_SUMMARY = '/Users/nik/tmp/forge-tradeverifyd-w0/cases/tradeverifyd-search-pg17-01/runs/wave1a_61m/wave1a_summary.json';
+import { BITMAP_SUBPLANS_SAMPLE } from './bitmap-subplans-fixture';
 
 test('IEC binary units and 8 KiB block formatting', () => {
   assert.equal(blocksToBytes(1), 8192);
@@ -19,11 +16,8 @@ test('IEC binary units and 8 KiB block formatting', () => {
   assert.equal(formatFactor(3.25), '3.3×');
 });
 
-test('Diagnostics engine flags spills, lossy bitmaps, disabled nodes, misestimates, and Wave 1a hotspots', () => {
-  const wavePlan = existsSync(WAVE1A_SUMMARY)
-    ? JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8')).explains.exact.stage3a_v6_2k_explain
-    : WAVE1A_SAMPLE;
-  const p = parsePlan(wavePlan);
+test('Diagnostics engine flags spills, lossy bitmaps, disabled nodes, misestimates, and filter discards', () => {
+  const p = parsePlan(BITMAP_SUBPLANS_SAMPLE);
   const diags = diagnosePlan(p);
   assert.ok(diags.some((d) => d.code === 'row-misestimate' && d.severity === 'high'));
   assert.ok(diags.some((d) => d.code === 'filter-discard' && d.severity === 'high'));

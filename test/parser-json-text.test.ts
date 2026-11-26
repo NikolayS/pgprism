@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
 import { parsePlan } from '../src/parser';
-import { WAVE1A_SAMPLE } from './wave1a-fixture';
-
-const WAVE1A_SUMMARY = '/Users/nik/tmp/forge-tradeverifyd-w0/cases/tradeverifyd-search-pg17-01/runs/wave1a_61m/wave1a_summary.json';
+import { BITMAP_SUBPLANS_SAMPLE } from './bitmap-subplans-fixture';
 
 test('PG 15 JSON plan: legacy I/O timings, JIT, Memoize, Triggers, Settings, negative 64-bit Query ID', () => {
   const pg15 = JSON.stringify([
@@ -68,7 +65,7 @@ test('PG 15 JSON plan: legacy I/O timings, JIT, Memoize, Triggers, Settings, neg
           },
         ],
       },
-      'Query Identifier': -8378418432840199008,
+      'Query Identifier': -7310968812554926703,
       'Planning Time': 1.25,
       Triggers: [{ 'Trigger Name': 'audit_trg', Relation: 'orders', Time: 0.45, Calls: 5 }],
       JIT: {
@@ -79,12 +76,12 @@ test('PG 15 JSON plan: legacy I/O timings, JIT, Memoize, Triggers, Settings, neg
       Settings: { work_mem: '32MB', jit: 'on' },
       'Execution Time': 15.1,
     },
-  ]).replace(/-837841843284019900\d/g, '-8378418432840199008');
+  ]).replace(/-731096881255492\d{4}/g, '-7310968812554926703');
 
   // Test raw JSON string with exact 64-bit integer literal
-  const pg15WithRawQid = pg15.replace('"Execution Time":15.1', '"Query Identifier":-8378418432840199008,"Execution Time":15.1');
+  const pg15WithRawQid = pg15.replace('"Execution Time":15.1', '"Query Identifier":-7310968812554926703,"Execution Time":15.1');
   const parsed = parsePlan(pg15WithRawQid);
-  assert.equal(parsed.queryIdentifier, '-8378418432840199008');
+  assert.equal(parsed.queryIdentifier, '-7310968812554926703');
   assert.equal(parsed.planningTimeMs, 1.25);
   assert.equal(parsed.executionTimeMs, 15.1);
   assert.equal(parsed.triggers.length, 1);
@@ -404,31 +401,17 @@ test('PG 19 JSON & TEXT: Replaces, WAL FPI Bytes, Memoize Estimates, EXPLAIN (IO
   assert.equal(res.replaces, 'Scan on dummy');
 });
 
-test('Real Wave 1a explains from wave1a_summary.json parse cleanly', () => {
-  const plans = existsSync(WAVE1A_SUMMARY)
-    ? (() => {
-        const summary = JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8'));
-        for (const cat of ['exact', 'typo', 'multi-word']) {
-          const entry = summary.explains[cat];
-          const p2 = parsePlan(entry.stage2_pattern_explain);
-          assert.equal(p2.plan.nodeType, 'Limit');
-          assert.equal(p2.queryIdentifier, '-8378418432840199008');
-          assert.ok(p2.executionTimeMs && p2.executionTimeMs > 0);
-        }
-        return ['exact', 'typo', 'multi-word'].map((c) => summary.explains[c].stage3a_v6_2k_explain);
-      })()
-    : [WAVE1A_SAMPLE];
-
-  for (const raw of plans) {
-    const p3 = parsePlan(raw);
-    assert.equal(p3.plan.nodeType, 'Bitmap Heap Scan');
-    assert.ok(p3.plan.plans.some((c) => c.subplanName === 'CTE forms'));
-    assert.ok(p3.plan.plans.some((c) => c.subplanName === 'SubPlan 2'));
-    assert.ok(p3.plan.plans.some((c) => c.subplanName === 'SubPlan 3'));
-    assert.ok(p3.plan.exclusiveTimeMs > 0);
-    assert.ok(p3.plan.totalBufferBlocks > 8000);
-    assert.ok(p3.plan.rowEstimateFactor > 10000);
-  }
+test('PG 17 text plan with a CTE, SubPlans, and a bitmap scan parses cleanly', () => {
+  const p = parsePlan(BITMAP_SUBPLANS_SAMPLE);
+  assert.equal(p.plan.nodeType, 'Bitmap Heap Scan');
+  assert.equal(p.queryIdentifier, '6039174250186347112');
+  assert.ok(p.executionTimeMs && p.executionTimeMs > 0);
+  assert.ok(p.plan.plans.some((c) => c.subplanName === 'CTE terms'));
+  assert.ok(p.plan.plans.some((c) => c.subplanName === 'SubPlan 2'));
+  assert.ok(p.plan.plans.some((c) => c.subplanName === 'SubPlan 3'));
+  assert.ok(p.plan.exclusiveTimeMs > 0);
+  assert.ok(p.plan.totalBufferBlocks > 8000);
+  assert.ok(p.plan.rowEstimateFactor > 10000);
 });
 
 test('Error handling for empty and malformed inputs', () => {

@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
 import {
   analyzePlan,
   formatForLLM,
@@ -14,9 +13,7 @@ import {
   resolveInitialTheme,
   resolveThemeFromBackgroundLayers,
 } from '../src/ui/render';
-import { WAVE1A_SAMPLE } from './wave1a-fixture';
-
-const WAVE1A_SUMMARY = '/Users/nik/tmp/forge-tradeverifyd-w0/cases/tradeverifyd-search-pg17-01/runs/wave1a_61m/wave1a_summary.json';
+import { BITMAP_SUBPLANS_SAMPLE } from './bitmap-subplans-fixture';
 
 test('isLikelyExplainPlan accepts JSON/TEXT plans and rejects arbitrary SQL, JSON, and prose', () => {
   assert.equal(isLikelyExplainPlan('SELECT id, name FROM users WHERE active = true;'), false);
@@ -45,14 +42,12 @@ test('isLikelyExplainPlan accepts JSON/TEXT plans and rejects arbitrary SQL, JSO
 });
 
 test('analyzePlan aggregates byRelation, byNodeType, CPU* vs I/O split, buffer hit %, and SubPlan targets', () => {
-  const wavePlan = existsSync(WAVE1A_SUMMARY)
-    ? JSON.parse(readFileSync(WAVE1A_SUMMARY, 'utf8')).explains.exact.stage3a_v6_2k_explain
-    : WAVE1A_SAMPLE;
-  const analysis = analyzePlan(wavePlan);
+  const samplePlan = BITMAP_SUBPLANS_SAMPLE;
+  const analysis = analyzePlan(samplePlan);
 
   assert.ok(analysis.diagnostics.length > 0);
   assert.ok(analysis.bufferHitPercent !== null && analysis.bufferHitPercent > 90);
-  assert.ok(analysis.byRelation.some((r) => r.name.includes('entity_names_g00000000')));
+  assert.ok(analysis.byRelation.some((r) => r.name.includes('product_names')));
   assert.ok(analysis.byNodeType.some((t) => t.nodeType === 'Bitmap Heap Scan'));
   assert.ok(analysis.parsed.subplanTargets['SubPlan 2']);
   assert.ok(analysis.parsed.subplanTargets['SubPlan 3']);
@@ -86,7 +81,7 @@ test('analyzePlan aggregates byRelation, byNodeType, CPU* vs I/O split, buffer h
   assert.equal(Math.round(ioAnalysis.bufferHitPercent!), 80);
   assert.equal(typeof jsonToText(ioPlan), 'string');
 
-  const md = formatForLLM(wavePlan);
+  const md = formatForLLM(samplePlan);
   assert.match(md, /# PostgreSQL execution plan summary/);
   assert.match(md, /## Findings/);
   assert.match(md, /## Top relations \/ indexes/);

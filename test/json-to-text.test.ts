@@ -109,7 +109,7 @@ test('jsonToText handles PG 17-19 features accurately and round-trips through pa
 
   const rawComplex = JSON.stringify(complex).replace(
     '"Planning Time":0.321',
-    '"Query Identifier":-8378418432840199008,"Planning Time":0.321'
+    '"Query Identifier":-7310968812554926703,"Planning Time":0.321'
   );
   const text = jsonToText(rawComplex);
   assert.ok(text.includes('Window: w AS (ORDER BY a)'));
@@ -119,7 +119,7 @@ test('jsonToText handles PG 17-19 features accurately and round-trips through pa
   assert.ok(text.includes('Subquery Scan on "left"'));
   assert.ok(text.includes('rows=0.50 loops=2'));
   assert.ok(text.includes('Disabled: true'));
-  assert.ok(text.includes('Query Identifier: -8378418432840199008'));
+  assert.ok(text.includes('Query Identifier: -7310968812554926703'));
   assert.ok(text.includes('Memory: used=64kB  allocated=128kB'));
   assert.ok(text.includes('Serialization: time=0.444 ms  output=12kB  format=binary'));
 
@@ -137,5 +137,5 @@ test('jsonToText handles PG 17-19 features accurately and round-trips through pa
   assert.equal(rt.plan.plans[0]?.actualRows, 0.5);
   assert.equal(rt.planning?.memoryUsedKb, 64);
   assert.equal(rt.serialization?.outputKb, 12);
-  assert.equal(rt.queryIdentifier, '-8378418432840199008');
+  assert.equal(rt.queryIdentifier, '-7310968812554926703');
 });
