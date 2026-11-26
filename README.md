@@ -4,7 +4,7 @@
 
 **EXPLAIN plans, refracted.** A tiny, zero-dependency Postgres plan visualizer you can embed anywhere: blogs, docs, dashboards, HTML reports.
 
-[![npm](https://img.shields.io/npm/v/pgprism?label=npm)](https://www.npmjs.com/package/pgprism)
+[![npm: pgprism](https://img.shields.io/badge/npm-pgprism-cb3837)](https://www.npmjs.com/package/pgprism)
 [![CI](https://github.com/NikolayS/pgprism/actions/workflows/ci.yml/badge.svg)](https://github.com/NikolayS/pgprism/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
