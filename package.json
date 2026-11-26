@@ -2,7 +2,7 @@
   "name": "pgprism",
   "version": "0.1.0-beta.1",
   "description": "Tiny, zero-dependency TypeScript visualizer and JSON-to-text translator for PostgreSQL EXPLAIN plans (PG 15-19)",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/pgprism.cjs",
   "module": "./dist/pgprism.js",

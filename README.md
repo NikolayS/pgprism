@@ -184,4 +184,4 @@ PGHOST=127.0.0.1 PGUSER=postgres PGPASSWORD=postgres npm run test:psql
 
 `pgPrism` draws design and Postgres-engineering inspiration from [Dalibo PEV2](https://github.com/dalibo/pev2), [depesz](https://explain.depesz.com/), Datadog query plans, [pgMustard](https://www.pgmustard.com/), and [explain.tensor.ru](https://explain.tensor.ru/), along with JSON-to-text formatting patterns from [Joe (`pgexplain`)](https://gitlab.com/postgres-ai/joe).
 
-MIT license.
+Apache-2.0 license.
