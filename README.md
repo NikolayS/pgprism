@@ -2,27 +2,46 @@
 
 # pgPrism
 
-Tiny, zero-dependency TypeScript library and `<pg-plan>` Web Component for Postgres `explain` plans (Postgres 15 through 19).
+**EXPLAIN plans, refracted.** A tiny, zero-dependency Postgres plan visualizer you can embed anywhere: blogs, docs, dashboards, HTML reports.
 
-Try the live demo at **[https://pgprism.dev/](https://pgprism.dev/)** (also served via [nikolays.github.io/pgprism](https://nikolays.github.io/pgprism/)) or install from npm via **[pgprism](https://www.npmjs.com/package/pgprism)**.
+[![npm](https://img.shields.io/npm/v/pgprism?label=npm)](https://www.npmjs.com/package/pgprism)
+[![CI](https://github.com/NikolayS/pgprism/actions/workflows/ci.yml/badge.svg)](https://github.com/NikolayS/pgprism/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-`pgPrism` parses both `explain (format json)` and text `explain` plans, treats `BUFFERS` as a primary metric in 8 KiB IEC binary units (`KiB`, `MiB`, `GiB`), translates JSON plans back to Postgres text via `jsonToText`, exports Markdown diagnostics via `formatForLLM`, and links findings directly to plan nodes.
+**[Live demo: pgprism.dev](https://pgprism.dev/)** (mirror: [nikolays.github.io/pgprism](https://nikolays.github.io/pgprism/)) · [npm: pgprism](https://www.npmjs.com/package/pgprism) · Postgres 15 through 19
 
-![pgPrism Table view in dark mode](docs/screenshots/table-dark.png)
+<p align="center">
+  <img src="docs/pgprism-demo.gif" width="520" alt="pgPrism turning a raw EXPLAIN plan into an interactive view, embedded in a blog, docs, a dashboard, and a report" />
+</p>
 
-## Install and quick start
+## Quick start: one script tag
 
-Install from npm:
+```html
+<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js" data-auto-attach></script>
+```
+
+Add it to any HTML page. Every `<pre>` that holds a Postgres plan, JSON or text, gets an interactive view with a toggle back to the raw text. There is no build step, no framework, and no backend: `pgPrism` runs entirely in the browser and sends the plan nowhere.
+
+Building an app? Install from npm and use the [`<pg-plan>` tag or the API](#four-integration-modes):
 
 ```sh
 npm install pgprism@0.1.0-beta.1
 ```
 
-Or drop the pinned prebuilt script directly into HTML:
+## Why pgPrism
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/pgprism@0.1.0-beta.1/dist/pgprism.iife.js" data-auto-attach></script>
-```
+- **Embeds anywhere.** One script tag, a `<pg-plan>` Web Component, or an npm import. Shadow DOM keeps your page's CSS and `pgPrism`'s CSS apart.
+- **Tiny.** Zero dependencies. One file with styles included, about 37 KiB gzipped.
+- **`BUFFERS` first.** Block counts become bytes in IEC binary units: `shared hit=16636` reads as `130 MiB`.
+- **Finds what is wrong.** Row misestimates, filter discards, temp spills, lossy bitmaps, and more, each linked to its plan node.
+- **Table, Tree, Flame.** Plus Text and JSON views, with one switch between buffers, disk reads, time, rows, and cost.
+- **JSON to text.** `jsonToText` turns `explain (format json)` plans back into classic Postgres text.
+- **Copy for LLM.** One click gives a compact Markdown brief for your coding agent (`formatForLLM`).
+- **Postgres 15 through 19.** Parses JSON and text plans, including the newest `explain` fields.
+
+![pgPrism Table view in dark mode](docs/screenshots/table-dark.png)
+
+## Install and pinning
 
 For production pages, pin `0.1.0-beta.1` on jsDelivr, unpkg (`https://unpkg.com/pgprism@0.1.0-beta.1/dist/pgprism.iife.js`), or vendor `dist/pgprism.iife.js` locally. `https://pgprism.dev/pgprism.iife.js` is available as a rolling preview URL tracking latest `main`.
 
